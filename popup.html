@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Redirector</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <header>
+            <img src="icon-48.png" alt="Redirector Icon" class="logo">
+            <h2 style="flex: 1;">Page Redirector</h2>
+            <span id="app-version" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+        </header>
+
+        <section class="pause-section">
+            <h3 id="pause-status" class="pause-status-text" style="display:none;">Paused</h3>
+            <p id="pause-time-remaining" class="pause-time" style="display:none;">Resumes at: ...</p>
+            
+            <div id="pause-controls" class="pause-controls">
+                <label for="pause-duration">Pause all redirects for:</label>
+                <div class="action-row">
+                    <select id="pause-duration" class="pause-select">
+                        <option value="10">10 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
+                    </select>
+                    <button id="pause-btn" class="btn btn-warning">Pause</button>
+                </div>
+            </div>
+            
+            <button id="resume-btn" class="btn btn-primary" style="display:none;">Resume Redirects</button>
+        </section>
+
+        <section class="actions-section">
+            <button id="manage-rules-btn" class="btn btn-secondary">Manage Rules</button>
+        </section>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
