@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Page Redirector Options</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>Page Redirector Rules <span id="app-version" style="font-size: 0.5em; color: gray; font-weight: normal; vertical-align: middle;"></span></h1>
+            <p>Manage your custom URL redirects here.</p>
+        </header>
+
+        <section class="add-rule-section">
+            <h2>Add / Edit Rule</h2>
+            <form id="add-rule-form">
+                <input type="hidden" id="editing-rule-id" value="">
+                <div class="form-group">
+                    <label for="rule-type">Match Type</label>
+                    <select id="rule-type" required>
+                        <option value="exact">Exact Match</option>
+                        <option value="wildcard">Wildcard (*)</option>
+                        <option value="regex">Regular Expression</option>
+                        <option value="bytecode">AST Script</option>
+                        <option value="compiled">Compiled VM Script</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="bytecode-match-group" style="display: none;">
+                    <label for="rule-bytecode-match">URL Match RegExp (Optional)</label>
+                    <input type="text" id="rule-bytecode-match" placeholder="e.g. ^https://example\.com/.*">
+                    <div class="help-text">
+                        <p>Only evaluate the bytecode script if the requested URL matches this regular expression.</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label id="rule-source-label" for="rule-source">Source URL / Pattern</label>
+                    <input type="text" id="rule-source" placeholder="e.g. https://example.com/old" required>
+                    <div style="position: relative;">
+                        <textarea id="rule-source-code" placeholder='e.g. host "example.com" eq [ "https://newdomain.com" redirect ] call-if' rows="6" style="display: none; width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                        <div id="autocomplete-overlay"></div>
+                    </div>
+                    <div id="bytecode-warning" class="help-text" style="display: none; color: #f59e0b; margin-top: 5px; font-weight: bold;"></div>
+                    <div id="regex-help" class="help-text" style="display: none;">
+                        <p><strong>Regex Syntax:</strong> Uses standard JavaScript regular expressions.</p>
+                        <p>Examples:</p>
+                        <ul>
+                            <li><code>^https://example\.com/(.*)$</code></li>
+                            <li><code>example\.org/page\.php\?id=(\d+)</code></li>
+                        </ul>
+                    </div>
+                    <div id="wildcard-help" class="help-text" style="display: none;">
+                        <p><strong>Wildcard Syntax:</strong> Use an asterisk (<code>*</code>) to match any characters.
+                        </p>
+                        <p>Example: <code>https://example.com/images/*</code></p>
+                    </div>
+                    <div id="bytecode-help" class="help-text" style="display: none;">
+                        <p><strong>Bytecode Syntax:</strong> Use the stack-based language. Emit a string and call <code>redirect</code>.</p>
+                        <p>Example: <code>host "example.com" eq [ "https://newdomain.com" redirect ] call-if</code></p>
+                    </div>
+
+                    <div id="debug-panel" style="display: none; margin-top: 1rem; border: 1px solid var(--border); border-radius: 4px; padding: 1rem; background-color: var(--surface);">
+                        <h4 style="margin-top: 0;">Inline Debugger</h4>
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; margin-top: 0.5rem;">
+                            <input type="text" id="debug-url" placeholder="Test URL (e.g. https://example.com/test?id=1)" style="flex: 1;" />
+                            <button type="button" id="debug-btn-start" class="btn btn-secondary">Debug</button>
+                            <button type="button" id="debug-btn-step" class="btn btn-secondary" style="display: none;">Step</button>
+                            <button type="button" id="debug-btn-run" class="btn btn-secondary" style="display: none;" title="Run to completion">Run ⏭</button>
+                            <button type="button" id="debug-btn-stop" class="btn" style="display: none; border: 1px solid var(--border); background-color: var(--background);">Stop</button>
+                        </div>
+                        <div id="debug-readout" style="display: none;">
+                            <div style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
+                                <div style="flex: 1; min-width: 0;"><strong>Op:</strong> <span id="debug-instruction" style="font-family: monospace; color: var(--primary);"></span></div>
+                                <div style="flex: 1; text-align: right;"><strong>Status:</strong> <span id="debug-status" style="font-weight: bold;"></span></div>
+                            </div>
+                            <div><strong>Stack State:</strong></div>
+                            <pre id="debug-stack" style="background-color: var(--background); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; overflow-x: auto; min-height: 48px; font-size: 0.9em; margin-bottom: 0; white-space: pre-wrap; word-wrap: break-word;"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" id="destination-group">
+                    <label for="rule-destination">Destination URL</label>
+                    <input type="text" id="rule-destination" placeholder="e.g. https://example.com/new" required>
+                    <div id="regex-dest-help" class="help-text" style="display: none;">
+                        <p><strong>Capture Groups:</strong> Use <code>$1</code>, <code>$2</code>, etc., to insert
+                            matched groups from the source.</p>
+                        <p>Example: <code>https://newdomain.com/$1</code></p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                    <button type="submit" id="submit-rule-btn" class="btn btn-primary">Add Rule</button>
+                    <button type="button" id="cancel-edit-btn" class="btn"
+                        style="display: none; background: #e2e8f0;">Cancel Edit</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="rules-list-section">
+            <div class="rules-header-row">
+                <h2>Active Rules</h2>
+                <div class="header-actions-group">
+                    <div class="pause-actions">
+                        <span id="pause-status" class="pause-status-text" style="display:none;">Paused until...</span>
+                        <select id="pause-duration" class="pause-select">
+                            <option value="10">10 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="60">1 hour</option>
+                        </select>
+                        <button id="pause-btn" class="btn btn-secondary btn-warning">Pause</button>
+                        <button id="resume-btn" class="btn btn-secondary" style="display:none;">Resume</button>
+                    </div>
+                    <div class="import-export-actions">
+                        <button id="export-btn" class="btn btn-secondary">Export Rules</button>
+                        <button id="import-btn" class="btn btn-secondary">Import Rules</button>
+                        <input type="file" id="import-file" accept=".json,.enc" style="display:none;">
+                    </div>
+                </div>
+            </div>
+            <div id="rules-container">
+                <!-- Rules will be dynamically inserted here -->
+            </div>
+        </section>
+    </div>
+
+    <!-- Template for a single rule -->
+    <template id="rule-template">
+        <div class="rule-card">
+            <div class="rule-header">
+                <div class="rule-header-left">
+                    <span class="type-badge">Exact</span>
+                    <span class="hit-count-badge" title="Times triggered">0 hits</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" class="rule-enabled" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="rule-content">
+                <div class="url-row source-row">
+                    <span class="url-label">From:</span>
+                    <span class="url-value source-url"></span>
+                </div>
+                <div class="url-arrow">↓</div>
+                <div class="url-row dest-row">
+                    <span class="url-label">To:</span>
+                    <span class="url-value dest-url"></span>
+                </div>
+            </div>
+            <div class="rule-actions">
+                <button class="btn btn-edit"
+                    style="background: #eab308; color: white; margin-right: 0.5rem; padding: 0.5rem 1rem; border: none; border-radius: 4px; font-size: 0.875rem; cursor: pointer;">Edit</button>
+                <button class="btn btn-danger delete-btn">Delete</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- Password Modal -->
+    <div id="password-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <h3 id="modal-title">Enter Password</h3>
+            <p id="modal-description" class="modal-desc">Enter a password to encrypt your exported rules.</p>
+            <input type="password" id="modal-password" placeholder="Password" autocomplete="off">
+            <div class="modal-actions">
+                <button id="modal-confirm-btn" class="btn btn-primary">Confirm</button>
+                <button id="modal-cancel-btn" class="btn" style="background: #e2e8f0;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="options.js"></script>
+</body>
+
+</html>
