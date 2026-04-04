@@ -94,13 +94,18 @@ export class Compiler {
             j++;
           }
           const blockTokens = ts.slice(start, j);
+          // Block compilation strategy:
+          // We need to push the address of the block body onto the stack, but skip
+          // over that body during normal linear execution.
+          // Bytecode layout: [PUSH_BLOCK] [body_addr] [JUMP] [next_addr] [body...] [RETURN]
+          // Example: [ "foo" redirect ] -> PUSH_BLOCK 10, JUMP 15, PUSH_STR "foo", REDIRECT, RETURN, <next>
           emit(Op.PUSH_BLOCK, 0);
           const pushArgIdx = bytecode.length - 1;
           emit(Op.JUMP, 0);
           const jumpArgIdx = bytecode.length - 1;
-          bytecode[pushArgIdx] = bytecode.length;
-          compilePass(blockTokens, true);
-          bytecode[jumpArgIdx] = bytecode.length;
+          bytecode[pushArgIdx] = bytecode.length; // Body starts here
+          compilePass(blockTokens, true);         // Compile body + Op.RETURN
+          bytecode[jumpArgIdx] = bytecode.length; // Jump skips to here
           pushedTokens++;
         } else if (t.type === '{') {
           let depth = 0;

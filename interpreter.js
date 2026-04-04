@@ -4,7 +4,7 @@ export class Interpreter {
   constructor(options = {}) {
     this.maxOps = options.maxOps || 1024;
     this.maxStack = 64;
-    this.maxCallStack = 16;
+    this.maxCallStack = options.maxCallStack || 16;
     this.maxStringLen = 4096;
     this.maxArrayLen = 256;
     this.dictionary = { ...this.buildIns() };

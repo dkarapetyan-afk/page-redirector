@@ -582,3 +582,48 @@ test(
   'https://example.com/',
   'is-quot'
 );
+
+// ─── Call Stack Depth & Configuration ────────────────────────────────
+
+// 59. Call Stack Overflow (default limit 16)
+// We nest 17 levels of calls.
+const nested17 = "[ ".repeat(17) + "1" + " ] call".repeat(17);
+test(
+  nested17,
+  'https://example.com/',
+  null // Expect failure/halt
+);
+
+// 60. Configurable Call Stack (set to 32, then nest 20)
+console.log("\nTesting Configurable maxCallStack (32)...");
+const nested20 = "[ ".repeat(20) + "\"pass\" redirect" + " ] call".repeat(20);
+try {
+  const source = nested20;
+  const url = 'https://example.com/';
+  // Note: We need a manual test call here because our `test` helper doesn't take options yet
+  const interpreter = new Interpreter({ maxCallStack: 32 });
+  const astResult = interpreter.execute(source, url);
+  if (astResult.success && astResult.redirect === "pass") {
+    console.log("AST PASS - Configured Depth (32) worked for 20 nests");
+  } else {
+    console.error("AST FAIL - Configured Depth (32) failed", astResult.error);
+  }
+
+  const { bytecode, constants } = Compiler.compile(source);
+  const vmResult = VM.execute(bytecode, constants, url, { maxCallStack: 32 });
+  if (vmResult.success && vmResult.redirect === "pass") {
+    console.log("VM PASS - Configured Depth (32) worked for 20 nests");
+  } else {
+    console.error("VM FAIL - Configured Depth (32) failed", vmResult.error);
+  }
+} catch (err) {
+  console.error("CONFIG TEST CRASH:", err.message);
+}
+
+// 61. Redirect inside Iteration (MAP)
+// Test that REDIRECT immediately exits and doesn't finish the map
+test(
+  `{ 1 2 3 } [ "stopped" redirect ] map "fail" redirect`,
+  'https://example.com/',
+  'stopped'
+);

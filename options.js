@@ -732,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const displayData = {};
         if (st.callStack && st.callStack.length > 0) {
-             displayData.CallFrames = st.callStack.map(frame => typeof frame === 'number' ? `IP: ${frame}` : `IP: ${frame.ip}`);
+             displayData.CallFrames = st.callStack;
         }
         displayData.Stack = st.stack;
         

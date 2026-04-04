@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Page Redirector",
-    "version": "1.22",
+    "version": "1.23",
     "description": "Redirects certain pages to other pages automatically.",
     "permissions": [
         "storage",

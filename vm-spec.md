@@ -275,9 +275,10 @@ The compiler strips strings to a constant pool, assigns integer Opcodes to all w
 |---|---|---|---|
 | `ip` | int | `0` | `bytecode.length` |
 | `stack` | array | `[url]` | 64 entries |
-| `call_stack` | array of `ip` | `[]` | depth 16 |
+| `call_stack` | array of frames | `[]` | `maxCallStack` depth |
+| `maxCallStack` | int | `16` | 8–64 |
 | `ops` | int | `0` | `maxOps` |
-| `maxOps` | int | `10000` | — |
+| `maxOps` | int | `1024` | — |
 
 > **Note**: The stack is initialized with the input URL already on it.
 
@@ -341,6 +342,7 @@ The op budget is configurable via `browser.storage.local`:
 | Setting | Default | Range | Description |
 |---|---|---|---|
 | `maxOps` | `1024` | 256–65,535 | Max tokens executed per invocation |
+| `maxCallStack` | `16` | 8–64 | Max nested function/block calls |
 
 ### 5.7 Error Conditions
 
@@ -353,7 +355,7 @@ The op budget is configurable via `browser.storage.local`:
 | Array exceeds 256 elements | Truncated |
 | Op budget exceeded | Halt, return `null`. Log rule ID and count. |
 | Invalid URL in decomposition | Push `""` |
-| Call stack overflow (>16) | Halt, return `null` |
+| Call stack overflow | Halt, return `null`. (Enforced by `maxCallStack`) |
 
 ---
 

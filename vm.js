@@ -1,46 +1,45 @@
 import { Op, OpReverseMap } from './opcodes.js';
 
 export class VM {
-  static execute(bytecode, constants, initialUrl) {
+  static execute(bytecode, constants, initialUrl, options = {}) {
     const stack = [initialUrl];
     let redirectUrl = null;
     let ops = 0;
-    const MAX_OPS = 10000;
+    const maxOps = options.maxOps || 10000;
+    const maxCallStack = options.maxCallStack || 16;
+    const callStack = [];
+
     try {
       run(0);
     } catch (e) {
       return { success: false, error: e.message };
     }
     return { success: true, redirect: redirectUrl, stack, ops };
+
     function run(startIp) {
       let ip = startIp;
-      const callStack = [];
-      while (ip < bytecode.length) {
-        if (ops++ > MAX_OPS) throw new Error("Maximum operations exceeded");
+      while (ip < bytecode.length || callStack.length > 0) {
+        if (ip >= bytecode.length) {
+          if (callStack.length === 0) break;
+          handleReturn();
+          continue;
+        }
+
+        if (ops++ > maxOps) throw new Error("Maximum operations exceeded");
         const op = bytecode[ip++];
+
         switch (op) {
-          case Op.PUSH_INT: {
-            stack.push(bytecode[ip++]);
-            break;
-          }
-          case Op.PUSH_STR: {
-            stack.push(constants[bytecode[ip++]]);
-            break;
-          }
-          case Op.JUMP: {
-            ip = bytecode[ip++];
-            break;
-          }
-          case Op.PUSH_BLOCK: {
-            stack.push(bytecode[ip++]);
-            break;
-          }
+          case Op.PUSH_INT: stack.push(bytecode[ip++]); break;
+          case Op.PUSH_STR: stack.push(constants[bytecode[ip++]]); break;
+          case Op.JUMP: ip = bytecode[ip++]; break;
+          case Op.PUSH_BLOCK: stack.push(bytecode[ip++]); break;
           case Op.RETURN: {
-            if (callStack.length === 0) return; // Return to host JS
-            ip = callStack.pop();
+            if (callStack.length === 0) return;
+            handleReturn();
             break;
           }
           case Op.CALL_CUSTOM: {
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
             const tgt = bytecode[ip++];
             callStack.push(ip);
             ip = tgt;
@@ -57,53 +56,28 @@ export class VM {
             stack.push(stack[stack.length - 1]);
             break;
           }
-          case Op.DROP: {
-            stack.pop();
-            break;
-          }
+          case Op.DROP: stack.pop(); break;
           case Op.SWAP: {
-            const y = stack.pop();
-            const x = stack.pop();
+            const y = stack.pop(), x = stack.pop();
             stack.push(y, x);
             break;
           }
           case Op.OVER: {
-            const y = stack.pop();
-            const x = stack.pop();
+            const y = stack.pop(), x = stack.pop();
             stack.push(x, y, x);
             break;
           }
           case Op.ROT: {
-            const z = stack.pop();
-            const y = stack.pop();
-            const x = stack.pop();
+            const z = stack.pop(), y = stack.pop(), x = stack.pop();
             stack.push(y, z, x);
             break;
           }
-          case Op.T: {
-            stack.push(stack[stack.length - 1]);
-            break;
-          }
-          case Op.HOST: {
-            stack.push(new URL(stack.pop()).hostname);
-            break;
-          }
-          case Op.PATH: {
-            stack.push(new URL(stack.pop()).pathname);
-            break;
-          }
-          case Op.PROTO: {
-            stack.push(new URL(stack.pop()).protocol.replace(":", ""));
-            break;
-          }
-          case Op.PORT: {
-            stack.push(new URL(stack.pop()).port || "");
-            break;
-          }
-          case Op.HASH: {
-            stack.push(new URL(stack.pop()).hash.replace("#", ""));
-            break;
-          }
+          case Op.T: stack.push(stack[stack.length - 1]); break;
+          case Op.HOST: stack.push(new URL(stack.pop()).hostname); break;
+          case Op.PATH: stack.push(new URL(stack.pop()).pathname); break;
+          case Op.PROTO: stack.push(new URL(stack.pop()).protocol.replace(":", "")); break;
+          case Op.PORT: stack.push(new URL(stack.pop()).port || ""); break;
+          case Op.HASH: stack.push(new URL(stack.pop()).hash.replace("#", "")); break;
           case Op.PARAM: {
             const key = stack.pop();
             stack.push(new URL(stack.pop()).searchParams.get(key) || "");
@@ -146,21 +120,16 @@ export class VM {
             break;
           }
           case Op.AND: {
-            const b = stack.pop();
-            const a = stack.pop();
+            const b = stack.pop(), a = stack.pop();
             stack.push((a && b) ? 1 : 0);
             break;
           }
           case Op.OR: {
-            const b = stack.pop();
-            const a = stack.pop();
+            const b = stack.pop(), a = stack.pop();
             stack.push((a || b) ? 1 : 0);
             break;
           }
-          case Op.NOT: {
-            stack.push(!stack.pop() ? 1 : 0);
-            break;
-          }
+          case Op.NOT: stack.push(!stack.pop() ? 1 : 0); break;
           case Op.STR_Q: {
             const v = stack[stack.length - 1];
             stack.push(typeof v === 'string' ? 1 : 0);
@@ -187,82 +156,65 @@ export class VM {
             break;
           }
           case Op.REPLACE: {
-            const rep = stack.pop();
-            const srch = stack.pop();
+            const rep = stack.pop(), srch = stack.pop();
             stack.push(String(stack.pop()).replace(String(srch), String(rep)));
             break;
           }
           case Op.REPLACE_ALL: {
-            const rep = stack.pop();
-            const srch = stack.pop();
+            const rep = stack.pop(), srch = stack.pop();
             stack.push(String(stack.pop()).split(String(srch)).join(String(rep)));
             break;
           }
           case Op.SUBSTR: {
-            const len = stack.pop();
-            const idx = stack.pop();
-            stack.push(String(stack.pop()).substr(idx, len));
+            const l = stack.pop(), i = stack.pop();
+            stack.push(String(stack.pop()).substr(i, l));
             break;
           }
           case Op.SET_PARAM: {
-            const val = stack.pop();
-            const key = stack.pop();
+            const v = stack.pop(), k = stack.pop();
             let u = new URL(stack.pop());
-            u.searchParams.set(key, val);
+            u.searchParams.set(k, v);
             stack.push(u.toString());
             break;
           }
           case Op.REMOVE_PARAM: {
-            const key = stack.pop();
+            const k = stack.pop();
             let u = new URL(stack.pop());
-            u.searchParams.delete(key);
+            u.searchParams.delete(k);
             stack.push(u.toString());
             break;
           }
           case Op.SPLIT: {
-            const delim = stack.pop();
-            stack.push(String(stack.pop()).split(String(delim)));
+            const d = stack.pop();
+            stack.push(String(stack.pop()).split(String(d)));
             break;
           }
-          case Op.PARAM_KEYS: {
-            stack.push(Array.from(new URL(stack.pop()).searchParams.keys()));
-            break;
-          }
-          case Op.PARAM_VALUES: {
-            stack.push(Array.from(new URL(stack.pop()).searchParams.values()));
-            break;
-          }
-          case Op.PATH_SEGMENTS: {
-            stack.push(new URL(stack.pop()).pathname.split('/').filter(x => x.length > 0));
-            break;
-          }
+          case Op.PARAM_KEYS: stack.push(Array.from(new URL(stack.pop()).searchParams.keys())); break;
+          case Op.PARAM_VALUES: stack.push(Array.from(new URL(stack.pop()).searchParams.values())); break;
+          case Op.PATH_SEGMENTS: stack.push(new URL(stack.pop()).pathname.split('/').filter(x => x.length > 0)); break;
           case Op.LEN: {
-            const arr = stack.pop();
-            stack.push(Array.isArray(arr) ? arr.length : 0);
+            const a = stack.pop();
+            stack.push(Array.isArray(a) ? a.length : 0);
             break;
           }
           case Op.GET: {
-            const i = stack.pop();
-            const arr = stack.pop();
-            stack.push(Array.isArray(arr) ? arr[i] : null);
+            const i = stack.pop(), a = stack.pop();
+            stack.push(Array.isArray(a) ? a[i] : null);
             break;
           }
           case Op.JOIN: {
-            const d = stack.pop();
-            const arr = stack.pop();
-            stack.push(Array.isArray(arr) ? arr.join(d) : String(arr));
+            const d = stack.pop(), a = stack.pop();
+            stack.push(Array.isArray(a) ? a.join(d) : String(a));
             break;
           }
           case Op.INDICES: {
-            const arr = stack.pop();
-            stack.push(Array.isArray(arr) ? arr.map((_, idx) => idx) : []);
+            const a = stack.pop();
+            stack.push(Array.isArray(a) ? a.map((_, i) => i) : []);
             break;
           }
           case Op.SLICE: {
-            const num = stack.pop();
-            const start = stack.pop();
-            const arr = stack.pop();
-            stack.push(Array.isArray(arr) ? arr.slice(start, start + num) : []);
+            const n = stack.pop(), s = stack.pop(), a = stack.pop();
+            stack.push(Array.isArray(a) ? a.slice(s, s + n) : []);
             break;
           }
           case Op.ZIP: {
@@ -273,80 +225,91 @@ export class VM {
             break;
           }
           case Op.CALL: {
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
             const pushIp = stack.pop();
             callStack.push(ip);
             ip = pushIp;
             break;
           }
           case Op.CALL_IF: {
-            const pushIp = stack.pop();
-            const flag = stack.pop();
+            const pushIp = stack.pop(), flag = stack.pop();
             if (flag) {
+              if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
               callStack.push(ip);
               ip = pushIp;
             }
             break;
           }
           case Op.CHOOSE: {
-            const fIp = stack.pop();
-            const tIp = stack.pop();
-            const flag = stack.pop();
+            const fIp = stack.pop(), tIp = stack.pop(), flag = stack.pop();
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
             callStack.push(ip);
             ip = flag ? tIp : fIp;
             break;
           }
           case Op.EACH: {
-            const eachIp = stack.pop();
-            const eachArr = stack.pop();
-            if (Array.isArray(eachArr)) {
-              for (let item of eachArr) {
-                stack.push(item);
-                run(eachIp);
-                if (redirectUrl) return;
-              }
-            }
+            const blockIp = stack.pop(), arr = stack.pop();
+            if (!Array.isArray(arr) || arr.length === 0) break;
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
+            callStack.push({ type: 'EACH', blockIp, returnIp: ip, arr, index: 0 });
+            stack.push(arr[0]);
+            ip = blockIp;
             break;
           }
           case Op.MAP: {
-            const eachIp = stack.pop();
-            const eachArr = stack.pop();
-            if (Array.isArray(eachArr)) {
-              const narr = [];
-              for (let item of eachArr) {
-                stack.push(item);
-                run(eachIp);
-                if (redirectUrl) return;
-                narr.push(stack.pop());
-              }
-              stack.push(narr);
-            } else stack.push([]);
+            const blockIp = stack.pop(), arr = stack.pop();
+            if (!Array.isArray(arr) || arr.length === 0) { stack.push([]); break; }
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
+            callStack.push({ type: 'MAP', blockIp, returnIp: ip, arr, index: 0, results: [] });
+            stack.push(arr[0]);
+            ip = blockIp;
             break;
           }
           case Op.FILTER: {
-            const eachIp = stack.pop();
-            const eachArr = stack.pop();
-            if (Array.isArray(eachArr)) {
-              const narr = [];
-              for (let item of eachArr) {
-                stack.push(item);
-                run(eachIp);
-                if (redirectUrl) return;
-                const flag = stack.pop();
-                if (flag) narr.push(item);
-              }
-              stack.push(narr);
-            } else stack.push([]);
+            const blockIp = stack.pop(), arr = stack.pop();
+            if (!Array.isArray(arr) || arr.length === 0) { stack.push([]); break; }
+            if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
+            callStack.push({ type: 'FILTER', blockIp, returnIp: ip, arr, index: 0, results: [] });
+            stack.push(arr[0]);
+            ip = blockIp;
             break;
           }
           case Op.REDIRECT: {
             redirectUrl = stack.pop();
             return;
           }
-          case Op.SKIP: {
-            return;
+          case Op.SKIP: return;
+          default: throw new Error(`Unknown opcode: ${op}`);
+        }
+        if (redirectUrl) return;
+      }
+
+      function handleReturn() {
+        const frame = callStack.pop();
+        if (typeof frame === 'number') {
+          ip = frame;
+        } else {
+          // Higher-order word iteration
+          let res;
+          if (frame.type === 'MAP' || frame.type === 'FILTER') {
+            res = stack.pop();
           }
-          default: {
-            throw new Error(`Unknown opcode: ${op}`);
+          if (frame.type === 'FILTER') {
+            if (res) frame.results.push(frame.arr[frame.index]);
+          } else if (frame.type === 'MAP') {
+            frame.results.push(res);
+          }
+          frame.index++;
+          if (frame.index < frame.arr.length) {
+            callStack.push(frame); // Keep iterating
+            stack.push(frame.arr[frame.index]);
+            ip = frame.blockIp;
+          } else {
+            // Iteration finished
+            if (frame.type === 'MAP' || frame.type === 'FILTER') {
+              stack.push(frame.results);
+            }
+            ip = frame.returnIp;
           }
         }
       }
@@ -403,7 +366,7 @@ export class VM {
 
 function makeRunCont(st, startIp, onDone) {
   let ip = startIp;
-  const callStack = [];
+  const callStack = st.callStack; // Use shared callStack from state
 
   function step() {
     if (ip >= st.bytecode.length) return onDone();
@@ -417,31 +380,39 @@ function makeRunCont(st, startIp, onDone) {
 
     // ── instruction label (read-only peek) ──
     switch (op) {
-      case Op.PUSH_INT:   st._currentInstruction = `PUSH_INT ${st.bytecode[ip]}`;  break;
-      case Op.PUSH_STR:   st._currentInstruction = `PUSH_STR "${st.constants[st.bytecode[ip]]}"`; break;
-      case Op.JUMP:       st._currentInstruction = `JUMP ${st.bytecode[ip]}`;      break;
+      case Op.PUSH_INT: st._currentInstruction = `PUSH_INT ${st.bytecode[ip]}`; break;
+      case Op.PUSH_STR: st._currentInstruction = `PUSH_STR "${st.constants[st.bytecode[ip]]}"`; break;
+      case Op.JUMP: st._currentInstruction = `JUMP ${st.bytecode[ip]}`; break;
       case Op.PUSH_BLOCK: st._currentInstruction = `PUSH_BLOCK ${st.bytecode[ip]}`; break;
-      case Op.CALL_CUSTOM:st._currentInstruction = `CALL_CUSTOM ${st.bytecode[ip]}`; break;
+      case Op.CALL_CUSTOM: st._currentInstruction = `CALL_CUSTOM ${st.bytecode[ip]}`; break;
       case Op.MAKE_ARRAY: st._currentInstruction = `MAKE_ARRAY ${st.bytecode[ip]}`; break;
-      case Op.EACH:       st._currentInstruction = 'EACH';   break;
-      case Op.MAP:        st._currentInstruction = 'MAP';    break;
-      case Op.FILTER:     st._currentInstruction = 'FILTER'; break;
+      case Op.EACH: st._currentInstruction = 'EACH'; break;
+      case Op.MAP: st._currentInstruction = 'MAP'; break;
+      case Op.FILTER: st._currentInstruction = 'FILTER'; break;
       default: st._currentInstruction = OpReverseMap[op] || `Unknown Op::${op}`; break;
     }
 
     // ── execute ──
     switch (op) {
-      case Op.PUSH_INT:   st.stack.push(st.bytecode[ip++]); return step;
-      case Op.PUSH_STR:   st.stack.push(st.constants[st.bytecode[ip++]]); return step;
-      case Op.JUMP:       ip = st.bytecode[ip]; return step;
+      case Op.PUSH_INT: st.stack.push(st.bytecode[ip++]); return step;
+      case Op.PUSH_STR: st.stack.push(st.constants[st.bytecode[ip++]]); return step;
+      case Op.JUMP: ip = st.bytecode[ip]; return step;
       case Op.PUSH_BLOCK: st.stack.push(st.bytecode[ip++]); return step;
 
       case Op.RETURN: {
         if (callStack.length === 0) return onDone();
-        ip = callStack.pop();
-        return step;
+        const frame = callStack.pop();
+        if (typeof frame === 'number') {
+          ip = frame;
+          return step;
+        } else {
+          // It's an iteration frame (EACH, MAP, FILTER)
+          // The onDone callback for this makeRunCont call handles the "after-block" logic
+          return onDone();
+        }
       }
       case Op.CALL_CUSTOM: {
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         const tgt = st.bytecode[ip++];
         callStack.push(ip);
         ip = tgt;
@@ -542,6 +513,7 @@ function makeRunCont(st, startIp, onDone) {
       }
 
       case Op.CALL: {
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         const pushIp = st.stack.pop();
         callStack.push(ip);
         ip = pushIp;
@@ -550,13 +522,18 @@ function makeRunCont(st, startIp, onDone) {
       case Op.CALL_IF: {
         const pushIp = st.stack.pop();
         const flag = st.stack.pop();
-        if (flag) { callStack.push(ip); ip = pushIp; }
+        if (flag) {
+          if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
+          callStack.push(ip);
+          ip = pushIp;
+        }
         return step;
       }
       case Op.CHOOSE: {
         const fIp = st.stack.pop();
         const tIp = st.stack.pop();
         const flag = st.stack.pop();
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         callStack.push(ip);
         ip = flag ? tIp : fIp;
         return step;
@@ -568,12 +545,16 @@ function makeRunCont(st, startIp, onDone) {
         const blockIp = st.stack.pop();
         const arr = st.stack.pop();
         if (!Array.isArray(arr) || arr.length === 0) return step;
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         let index = 0;
         function nextItem() {
           if (index >= arr.length) return step;
           st.stack.push(arr[index]);
           index++;
-          return makeRunCont(st, blockIp, nextItem);
+          // We need an iteration frame for RETURN to know where to go back
+          callStack.push({ type: 'EACH', returnIp: ip });
+          // Note: EACH doesn't collect values, just continues
+          return makeRunCont(st, blockIp, () => nextItem());
         }
         return nextItem();
       }
@@ -584,6 +565,7 @@ function makeRunCont(st, startIp, onDone) {
           st.stack.push([]);
           return step;
         }
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         const results = [];
         let index = 0;
         function nextItem() {
@@ -593,6 +575,7 @@ function makeRunCont(st, startIp, onDone) {
           }
           st.stack.push(arr[index]);
           index++;
+          callStack.push({ type: 'MAP', returnIp: ip });
           return makeRunCont(st, blockIp, function afterBlock() {
             results.push(st.stack.pop());
             return nextItem();
@@ -607,6 +590,7 @@ function makeRunCont(st, startIp, onDone) {
           st.stack.push([]);
           return step;
         }
+        if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
         const results = [];
         let index = 0;
         function nextItem() {
@@ -617,6 +601,7 @@ function makeRunCont(st, startIp, onDone) {
           const item = arr[index];
           st.stack.push(item);
           index++;
+          callStack.push({ type: 'FILTER', returnIp: ip });
           return makeRunCont(st, blockIp, function afterBlock() {
             if (st.stack.pop()) results.push(item);
             return nextItem();
