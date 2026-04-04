@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "scripts": {
+    "build:rs": "npm run build:rs:node && npm run build:rs:web",
+    "build:rs:node": "cd rs-vm && wasm-pack build --target nodejs --out-dir pkg-node",
+    "build:rs:web": "cd rs-vm && wasm-pack build --target web --out-dir pkg-web",
+    "test:rs": "node test-wasm.js"
+  }
+}

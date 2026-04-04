@@ -1,6 +1,9 @@
 import { Interpreter } from './interpreter.js';
 import { Compiler } from './compiler.js';
 import { VM } from './vm.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { execute: wasmExecute } = require('./rs-vm/pkg-node/rs_vm.js');
 
 const interpreter = new Interpreter({ maxOps: 1000000 });
 const iterations = 1000;
@@ -24,7 +27,7 @@ function benchmark(name, source, url) {
   const endComp = performance.now();
   const compDuration = endComp - startComp;
 
-  // VM Execution
+  // JS VM Execution
   const startVm = performance.now();
   let vmRes;
   for (let i = 0; i < iterations; i++) {
@@ -33,10 +36,23 @@ function benchmark(name, source, url) {
   const endVm = performance.now();
   const vmDuration = (endVm - startVm) / iterations;
 
+  // WASM VM Execution
+  const options = { maxOps: 1000000, maxCallStack: 1000 };
+  const startWasm = performance.now();
+  let wasmRes;
+  for (let i = 0; i < iterations; i++) {
+    wasmRes = wasmExecute(bytecode, constants, url, options);
+  }
+  const endWasm = performance.now();
+  const wasmDuration = (endWasm - startWasm) / iterations;
+
   console.log(`AST Interpreter: ${astDuration.toFixed(4)} ms/op (ops: ${astRes.ops})`);
   console.log(`Compiler:        ${compDuration.toFixed(4)} ms (one-time)`);
-  console.log(`Compiled VM:     ${vmDuration.toFixed(4)} ms/op (ops: ${vmRes.ops})`);
-  console.log(`Speedup:         ${(astDuration / vmDuration).toFixed(2)}x`);
+  console.log(`JS VM:           ${vmDuration.toFixed(4)} ms/op (ops: ${vmRes.ops})`);
+  console.log(`WASM VM:         ${wasmDuration.toFixed(4)} ms/op (ops: ${wasmRes.ops})`);
+  console.log(`Speedup (JS VM):   ${(astDuration / vmDuration).toFixed(2)}x`);
+  console.log(`Speedup (WASM):    ${(astDuration / wasmDuration).toFixed(2)}x`);
+  console.log(`WASM vs JS VM:     ${(vmDuration / wasmDuration).toFixed(2)}x faster`);
 }
 
 console.log(`Running benchmarks with ${iterations} iterations each...`);

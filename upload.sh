@@ -23,11 +23,14 @@ if [ ! -f "$VENV_PYTHON" ]; then
     exit 1
 fi
 
+echo " Building WASM module for web target..."
+(cd rs-vm && wasm-pack build --target web --out-dir pkg-web) || exit 1
+
 echo " repackaging $ZIP_FILE..."
 if [ -f "$ZIP_FILE" ]; then
   rm "$ZIP_FILE"
 fi
-zip -9 -r "$ZIP_FILE" ./* -x ".*" -x "*.sh" -x "*.py" -x "web-ext-*"
+zip -9 -r "$ZIP_FILE" ./* -x ".*" -x "*.sh" -x "*.py" -x "web-ext-*" -x "node_modules/*" -x "rs-vm/pkg-node/*" -x "rs-vm/src/*" -x "rs-vm/target/*" -x "rs-vm/Cargo.*" -x ".venv/*" -x "$ZIP_FILE" -x "test-*" -x "perf-*"
 
 echo " Generating JWT token..."
 TOKEN=$($VENV_PYTHON get_jwt.py "$ISSUER" "$SECRET")

@@ -101,6 +101,21 @@
             </form>
         </section>
 
+        <section class="global-settings-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--surface); border: 1px solid var(--border); border-radius: 8px;">
+            <h2 style="margin-top: 0;">Global Settings</h2>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="execution-engine">Default Execution Engine (for Compiled Scripts)</label>
+                <select id="execution-engine" style="max-width: 300px;">
+                    <option value="ast">Original (AST Interpreter)</option>
+                    <option value="bytecode-js">Standard (JS Bytecode VM)</option>
+                    <option value="bytecode-wasm">High Performance (WASM VM) [Experimental]</option>
+                </select>
+                <div class="help-text">
+                    <p>Select which engine handles compiled VM scripts. WASM is significantly faster for complex rules.</p>
+                </div>
+            </div>
+        </section>
+
         <section class="rules-list-section">
             <div class="rules-header-row">
                 <h2>Active Rules</h2>

@@ -25,3 +25,5 @@ Page Redirector is a Firefox/Chrome browser extension that allows users to autom
 1.23 : VM execution loop is completely non-recursive for stack-safety (no JS recursion during `FILTER`/`MAP`/`EACH`); frame-based iteration on explicit call stack. Configurable `maxCallStack` limit (default 16, min 8, max 64). Bug in `EACH` where iteration results were incorrectly popped from the stack.
 
 1.24 : **Generator-based Debugger** for both the bytecode VM and AST interpreter; replaced CPS with generators (`yield*`). Higher-order words (`MAP`, `FILTER`, `EACH`) use non-recursive iteration loops.
+
+1.25 : **WASM VM Engine** Rust-based execution alternative; 16-bit opcode arguments (up to 65,535).

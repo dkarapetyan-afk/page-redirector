@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('add-rule-form');
     const rulesContainer = document.getElementById('rules-container');
     const template = document.getElementById('rule-template');
+    const executionEngineSelect = document.getElementById('execution-engine');
 
     // Edit mode elements
     const editingRuleIdInput = document.getElementById('editing-rule-id');
@@ -37,6 +38,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const debugInstruction = document.getElementById('debug-instruction');
     const debugStatus = document.getElementById('debug-status');
     const debugStack = document.getElementById('debug-stack');
+
+    if (executionEngineSelect) {
+        executionEngineSelect.addEventListener('change', () => {
+            browser.storage.local.set({ executionEngine: executionEngineSelect.value });
+        });
+    }
 
     let debugSession = null;
     let debugIsCompiled = false;
@@ -234,10 +241,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ruleSourceCode.addEventListener('blur', hideAutocomplete);
     }
 
-    // Load rules from storage
+    // Load rules and settings from storage
     function loadRules() {
-        browser.storage.local.get("redirectRules").then((data) => {
+        browser.storage.local.get(["redirectRules", "executionEngine"]).then((data) => {
             rules = data.redirectRules || [];
+            if (data.executionEngine && executionEngineSelect) {
+                executionEngineSelect.value = data.executionEngine;
+            }
             renderRules();
         });
     }

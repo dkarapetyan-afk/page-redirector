@@ -1,10 +1,21 @@
 import { Interpreter } from './interpreter.js';
 import { VM } from './vm.js';
 import { Compiler, COMPILER_VERSION } from './compiler.js';
+import init, { execute as wasmExecute } from './rs-vm/pkg-web/rs_vm.js';
 
 const vm = new Interpreter();
 
 let rules = []; // Rules wrapped with compiled Regex objects
+let wasmReady = false;
+let executionEngine = 'bytecode-js'; // Default engine
+
+// Load and initialize WASM VM for web environment
+init().then(() => {
+    wasmReady = true;
+    console.log("WASM VM Initialized Successfully");
+}).catch(e => {
+    console.error("Failed to initialize WASM VM:", e);
+});
 
 function processRules(rawRules) {
     let needsSave = false;
@@ -66,16 +77,19 @@ function processRules(rawRules) {
 let pauseUntil = 0;
 
 // Load rules initially
-browser.storage.local.get(["redirectRules", "pauseUntil"]).then((data) => {
+browser.storage.local.get(["redirectRules", "pauseUntil", "executionEngine"]).then((data) => {
     if (data.redirectRules) {
         rules = processRules(data.redirectRules);
     }
     if (data.pauseUntil !== undefined) {
         pauseUntil = data.pauseUntil;
     }
+    if (data.executionEngine) {
+        executionEngine = data.executionEngine;
+    }
 });
 
-// Update rules when storage changes
+// Update rules and settings when storage changes
 browser.storage.onChanged.addListener((changes, area) => {
     if (area === "local") {
         if (changes.redirectRules) {
@@ -83,6 +97,9 @@ browser.storage.onChanged.addListener((changes, area) => {
         }
         if (changes.pauseUntil !== undefined) {
             pauseUntil = changes.pauseUntil.newValue || 0;
+        }
+        if (changes.executionEngine) {
+            executionEngine = changes.executionEngine.newValue || 'bytecode-js';
         }
     }
 });
@@ -117,7 +134,13 @@ function checkRedirect(url) {
             try {
                 let res;
                 if (rule.type === "compiled") {
-                    res = VM.execute(rule.bytecode, rule.constants, url);
+                    if (executionEngine === 'bytecode-wasm' && wasmReady) {
+                        res = wasmExecute(new Uint8Array(rule.bytecode), rule.constants, url, {});
+                    } else if (executionEngine === 'ast') {
+                         res = vm.execute(rule.source, url);
+                    } else {
+                        res = VM.execute(rule.bytecode, rule.constants, url);
+                    }
                 } else {
                     res = vm.execute(rule.source, url);
                 }

@@ -47,11 +47,17 @@ export class Compiler {
       }
     }
     function emit(op, arg) {
+      const idx = bytecode.length;
       bytecode.push(op);
       if (arg !== undefined) {
-        bytecode.push(arg);
+        bytecode.push(arg & 0xFF);
+        bytecode.push((arg >> 8) & 0xFF);
       }
-      return bytecode.length - 1;
+      return idx;
+    }
+    function patch16(idx, val) {
+      bytecode[idx] = val & 0xFF;
+      bytecode[idx + 1] = (val >> 8) & 0xFF;
     }
     const patchList = [];
     const customWordIps = {};
@@ -76,8 +82,8 @@ export class Compiler {
           if (BuiltinMap[name]) {
             emit(BuiltinMap[name]);
           } else if (definitions[name]) {
-            emit(Op.CALL_CUSTOM, 0);
-            patchList.push({ idx: bytecode.length - 1, name: name });
+            const opIdx = emit(Op.CALL_CUSTOM, 0);
+            patchList.push({ idx: opIdx + 1, name: name });
           } else {
             throw new Error(`Unknown word during compilation: ${name}`);
           }
@@ -94,18 +100,12 @@ export class Compiler {
             j++;
           }
           const blockTokens = ts.slice(start, j);
-          // Block compilation strategy:
-          // We need to push the address of the block body onto the stack, but skip
-          // over that body during normal linear execution.
-          // Bytecode layout: [PUSH_BLOCK] [body_addr] [JUMP] [next_addr] [body...] [RETURN]
-          // Example: [ "foo" redirect ] -> PUSH_BLOCK 10, JUMP 15, PUSH_STR "foo", REDIRECT, RETURN, <next>
-          emit(Op.PUSH_BLOCK, 0);
-          const pushArgIdx = bytecode.length - 1;
-          emit(Op.JUMP, 0);
-          const jumpArgIdx = bytecode.length - 1;
-          bytecode[pushArgIdx] = bytecode.length; // Body starts here
-          compilePass(blockTokens, true);         // Compile body + Op.RETURN
-          bytecode[jumpArgIdx] = bytecode.length; // Jump skips to here
+          // Bytecode layout: [PUSH_BLOCK] [body_addr:16] [JUMP] [next_addr:16] [body...] [RETURN]
+          const pushOpIdx = emit(Op.PUSH_BLOCK, 0);
+          const jumpOpIdx = emit(Op.JUMP, 0);
+          patch16(pushOpIdx + 1, bytecode.length); // Body starts here
+          compilePass(blockTokens, true);          // Compile body + Op.RETURN
+          patch16(jumpOpIdx + 1, bytecode.length); // Jump skips to here
           pushedTokens++;
         } else if (t.type === '{') {
           let depth = 0;
@@ -134,16 +134,15 @@ export class Compiler {
       return pushedTokens;
     }
     compilePass(mainTokens, false);
-    emit(Op.JUMP, 0);
-    const endJumpIdx = bytecode.length - 1;
+    const endJumpOpIdx = emit(Op.JUMP, 0);
     for (const [name, defTokens] of Object.entries(definitions)) {
       customWordIps[name] = bytecode.length;
       compilePass(defTokens, true);
     }
-    bytecode[endJumpIdx] = bytecode.length;
+    patch16(endJumpOpIdx + 1, bytecode.length);
     for (const patch of patchList) {
       if (customWordIps[patch.name] !== undefined) {
-        bytecode[patch.idx] = customWordIps[patch.name];
+        patch16(patch.idx, customWordIps[patch.name]);
       } else {
         throw new Error(`Compiler internal linking error for: ${patch.name}`);
       }

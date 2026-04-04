@@ -24,10 +24,10 @@ export class VM {
         const op = bytecode[ip++];
 
         switch (op) {
-          case Op.PUSH_INT: stack.push(bytecode[ip++]); break;
-          case Op.PUSH_STR: stack.push(constants[bytecode[ip++]]); break;
-          case Op.JUMP: ip = bytecode[ip++]; break;
-          case Op.PUSH_BLOCK: stack.push(bytecode[ip++]); break;
+          case Op.PUSH_INT: stack.push(bytecode[ip] | (bytecode[ip + 1] << 8)); ip += 2; break;
+          case Op.PUSH_STR: stack.push(constants[bytecode[ip] | (bytecode[ip + 1] << 8)]); ip += 2; break;
+          case Op.JUMP: ip = bytecode[ip] | (bytecode[ip + 1] << 8); break;
+          case Op.PUSH_BLOCK: stack.push(bytecode[ip] | (bytecode[ip + 1] << 8)); ip += 2; break;
           case Op.RETURN: {
             if (callStack.length === 0) return { success: true, redirect: redirectUrl, stack, ops };
             const st = { ip, stack, callStack };
@@ -37,13 +37,15 @@ export class VM {
           }
           case Op.CALL_CUSTOM: {
             if (callStack.length >= maxCallStack) throw new Error("Call stack overflow");
-            const tgt = bytecode[ip++];
+            const tgt = bytecode[ip] | (bytecode[ip + 1] << 8);
+            ip += 2;
             callStack.push(ip);
             ip = tgt;
             break;
           }
           case Op.MAKE_ARRAY: {
-            const len = bytecode[ip++];
+            const len = bytecode[ip] | (bytecode[ip + 1] << 8);
+            ip += 2;
             const arr = len > 0 ? stack.splice(-len) : [];
             stack.push(arr);
             break;
