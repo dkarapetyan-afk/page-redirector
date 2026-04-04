@@ -172,42 +172,26 @@ export class Interpreter {
       ip: 0,
       tokens: tokens,
       stack: [initialUrl],
-      callStack: [], // { ip, dict }
+      callStack: [], // [{ ip, dictionary }]
       ops: 0,
       redirectUrl: null,
-      dictionary: { ...this.dictionary }, // Scope clone for this run (for words)
-      error: null
+      dictionary: { ...this.dictionary },
+      error: null,
+      maxCallStack: this.maxCallStack
     };
-    // First pass: register word definitions
+
     try {
       this.registerWords(state);
     } catch (e) {
       return { success: false, error: e.message };
     }
-    const self = this;
-    // The inner CPS step function
-    function next() {
-      if (state.error || state.redirectUrl !== null || state.ip >= state.tokens.length) {
-        return null; // Halt
-      }
-      if (state.ops >= self.maxOps) {
-        state.error = "Op budget exceeded";
-        return null;
-      }
-      const token = state.tokens[state.ip++];
-      state.ops++;
-      return () => self.dispatch(token, state, next);
+
+    const gen = this.runGenerator(state);
+    let res = gen.next();
+    while (!res.done) {
+      res = gen.next();
     }
-    // Trampoline loop
-    let thunk = next;
-    while (typeof thunk === 'function') {
-      try {
-        thunk = thunk();
-      } catch (e) {
-        state.error = e.message;
-        break;
-      }
-    }
+
     if (state.error) {
       if (state.error === "SKIP_SIGNAL") {
         return { success: true, redirect: null, ops: state.ops };
@@ -216,11 +200,13 @@ export class Interpreter {
     }
     return {
       success: true,
-      redirect: state.redirectUrl, // null means SKIP, string means REDIRECT
+      redirect: state.redirectUrl,
       ops: state.ops
     };
   }
-  createDebugSession(tokens, initialUrl) {
+
+  static createDebugSession(tokens, initialUrl, options = {}) {
+    const interpreter = new Interpreter(options);
     const state = {
       ip: 0,
       tokens: tokens,
@@ -228,46 +214,64 @@ export class Interpreter {
       callStack: [],
       ops: 0,
       redirectUrl: null,
-      dictionary: { ...this.dictionary },
-      error: null
+      dictionary: { ...interpreter.dictionary },
+      error: null,
+      maxCallStack: interpreter.maxCallStack
     };
+
     try {
-      this.registerWords(state);
+      interpreter.registerWords(state);
     } catch (e) {
       state.error = e.message;
-      return { state, thunk: null, done: true };
+      return { state, done: true };
     }
-    const self = this;
-    function next() {
-      if (state.error || state.redirectUrl !== null || state.ip >= state.tokens.length) {
-        return null;
-      }
-      if (state.ops >= self.maxOps) {
-        state.error = "Op budget exceeded";
-        return null;
-      }
-      state._currentInstruction = state.tokens[state.ip].type === 'WORD'
-        ? state.tokens[state.ip].value
-        : String(state.tokens[state.ip].value || state.tokens[state.ip].type);
-      const token = state.tokens[state.ip++];
-      state.ops++;
-      return () => self.dispatch(token, state, next);
-    }
-    return { state, thunk: next, done: false };
+
+    state._gen = interpreter.runGenerator(state);
+    return { state, done: false };
   }
-  stepSession(session) {
-    if (session.done || !session.thunk) {
+
+  static stepSession(session) {
+    if (session.done) return session;
+    const st = session.state;
+
+    if (st.redirectUrl !== null || st.error) {
       session.done = true;
       return session;
     }
+
     try {
-      session.thunk = session.thunk();
-      if (!session.thunk) session.done = true;
+      const { done } = st._gen.next();
+      if (done) session.done = true;
     } catch (e) {
-      session.state.error = e.message;
+      st.error = e.message;
       session.done = true;
     }
+
     return session;
+  }
+
+  *runGenerator(state) {
+    while (state.ip < state.tokens.length && !state.error && state.redirectUrl === null) {
+      if (state.ops >= this.maxOps) {
+        state.error = "Op budget exceeded";
+        return;
+      }
+      
+      const token = state.tokens[state.ip];
+      state._currentInstruction = (token.type === 'WORD' ? token.value : String(token.value || token.type));
+      
+      yield state; // Yield BEFORE execution
+
+      state.ip++;
+      state.ops++;
+      
+      try {
+        yield* this.dispatchGen(token, state);
+      } catch (e) {
+        state.error = e.message;
+        return;
+      }
+    }
   }
   registerWords(state) {
     let i = 0;
@@ -281,69 +285,51 @@ export class Interpreter {
         const name = state.tokens[i].value;
         i++;
         const start = i;
-        // Scan to semicolon
-        let depth = 0; // handle nested structures just in case
+        let depth = 0;
         while (i < state.tokens.length) {
           if (state.tokens[i].type === ':') {
             throw new Error(`Nested word definitions are not allowed (word: '${name}')`);
           }
           if (state.tokens[i].type === ';' && depth === 0) break;
-          // Note: words shouldn't nest, but bracket quotes inside words do
           if (state.tokens[i].type === '[') depth++;
           if (state.tokens[i].type === ']') depth--;
           i++;
         }
-        if (i >= state.tokens.length) {
-          throw new Error(`Unterminated definition for word '${name}'`);
-        }
-        if (depth !== 0) {
-          throw new Error(`Unbalanced brackets in definition for word '${name}'`);
-        }
-        if (this.dictionary[name]) {
-          console.warn(`VM Warning: Word definition for '${name}' overrides a built-in word.`);
-        }
-        // Register in dictionary: a custom word is just a function that sets up the call stack and jumps
+        if (i >= state.tokens.length) throw new Error(`Unterminated definition for word '${name}'`);
         const end = i;
         const self = this;
-        state.dictionary[name] = (st, next) => {
-          if (st.callStack.length >= this.maxCallStack) {
-            throw new Error("Call stack overflow");
-          }
+        state.dictionary[name] = function* (st) {
+          if (st.callStack.length >= (st.maxCallStack || 16)) throw new Error("Call stack overflow");
           st.callStack.push({ ip: st.ip });
           st.ip = start;
-          const runWordBody = () => {
-            if (st.ip >= end || st.ops >= self.maxOps || st.redirectUrl !== null || st.error) {
-              const frame = st.callStack.pop();
-              st.ip = frame.ip;
-              return next;
-            }
+          while (st.ip < end && !st.error && st.redirectUrl === null) {
+            if (st.ops++ >= self.maxOps) throw new Error("Op budget exceeded");
             const t = st.tokens[st.ip++];
-            st.ops++;
-            return () => self.dispatch(t, st, runWordBody);
-          };
-          return runWordBody;
+            yield* self.dispatchGen(t, st);
+          }
+          const frame = st.callStack.pop();
+          st.ip = frame.ip;
         };
       }
       i++;
     }
   }
-  dispatch(token, state, next) {
+
+  *dispatchGen(token, state) {
     if (token.type === ':') {
-      // Skip over definition body (already registered in registerWords)
       let depth = 0;
       while (state.ip < state.tokens.length) {
         if (state.tokens[state.ip].type === ';' && depth === 0) {
-          state.ip++; // skip semicolon
+          state.ip++;
           break;
         }
         if (state.tokens[state.ip].type === '[') depth++;
         if (state.tokens[state.ip].type === ']') depth--;
         state.ip++;
       }
-      return next;
+      return;
     }
     if (token.type === '[') {
-      // Scan for closing bracket to construct quotation reference
       let depth = 1;
       const start = state.ip;
       while (state.ip < state.tokens.length && depth > 0) {
@@ -352,42 +338,34 @@ export class Interpreter {
         state.ip++;
       }
       if (depth > 0) throw new Error("Unterminated quotation '['");
-      const end = state.ip - 1; // point to ']'
-      this.push(state, { type: 'QUOTATION', start, end });
-      return next;
+      this.push(state, { type: 'QUOTATION', start, end: state.ip - 1 });
+      return;
     }
     if (token.type === '{') {
-      // Array literal - evaluates elements until CLOSE_BRACE
       const arrayStack = [[]];
-      const self = this;
-      function readElement() {
-        if (state.ip >= state.tokens.length) {
-          state.error = "Unterminated array '{'";
-          return null;
-        }
+      while (state.ip < state.tokens.length) {
         const pt = state.tokens[state.ip++];
         state.ops++;
         if (pt.type === '}') {
           const finishedArray = arrayStack.pop();
-          if (finishedArray.length > self.maxArrayLen) finishedArray.length = self.maxArrayLen;
+          if (finishedArray.length > this.maxArrayLen) finishedArray.length = this.maxArrayLen;
           if (arrayStack.length === 0) {
-            self.push(state, finishedArray);
-            return next;
+            this.push(state, finishedArray);
+            return;
           } else {
             arrayStack[arrayStack.length - 1].push(finishedArray);
-            return readElement;
+            continue;
           }
         }
         if (pt.type === '{') {
           arrayStack.push([]);
-          return readElement;
+          continue;
         }
         if (pt.type === 'STRING' || pt.type === 'NUMBER') {
           arrayStack[arrayStack.length - 1].push(pt.value);
-          return readElement;
+          continue;
         }
         if (pt.type === '[') {
-          // Quotations inside arrays
           let depth = 1;
           const start = state.ip;
           while (state.ip < state.tokens.length && depth > 0) {
@@ -395,31 +373,31 @@ export class Interpreter {
             if (state.tokens[state.ip].type === ']') depth--;
             state.ip++;
           }
-          if (depth > 0) { state.error = "Unterminated quotation"; return null; }
+          if (depth > 0) throw new Error("Unterminated quotation");
           arrayStack[arrayStack.length - 1].push({ type: 'QUOTATION', start, end: state.ip - 1 });
-          return readElement;
+          continue;
         }
-        state.error = `Invalid element in array literal: ${pt.value}`;
-        return null;
+        throw new Error(`Invalid element in array literal: ${pt.value}`);
       }
-      return readElement;
+      throw new Error("Unterminated array '{'");
     }
     if (token.type === 'STRING' || token.type === 'NUMBER') {
       this.push(state, token.value);
-      return next;
+      return;
     }
     if (token.type === 'WORD') {
       const wordFn = state.dictionary[token.value];
-      if (!wordFn) {
-        throw new Error(`Unknown word: '${token.value}'`);
+      if (!wordFn) throw new Error(`Unknown word: '${token.value}'`);
+      if (wordFn.constructor.name === 'GeneratorFunction') {
+        yield* wordFn(state);
+      } else {
+        wordFn(state);
       }
-      return wordFn(state, next);
+      return;
     }
     throw new Error(`Unexpected token: ${token.type}`);
   }
-  // ------------------------------------------------------------------------
-  // Stack Helpers
-  // ------------------------------------------------------------------------
+
   push(state, val) {
     if (state.stack.length >= this.maxStack) throw new Error("Stack overflow");
     if (typeof val === 'string' && val.length > this.maxStringLen) {
@@ -441,26 +419,21 @@ export class Interpreter {
     if (val && val.type === 'QUOTATION') return true;
     return false;
   }
-  // Executing a quotation (used by combinators)
-  execQuotation(state, quot, next) {
+  *execQuotation(state, quot) {
     if (!quot || quot.type !== 'QUOTATION') throw new Error("Expected quotation");
-    if (state.callStack.length >= this.maxCallStack) throw new Error("Call stack overflow");
+    if (state.callStack.length >= (state.maxCallStack || 16)) throw new Error("Call stack overflow");
     const savedIp = state.ip;
     state.ip = quot.start;
     state.callStack.push({ ip: savedIp });
-    const self = this;
-    const runQuotBody = () => {
-      if (state.ip >= quot.end || state.ops >= self.maxOps || state.redirectUrl !== null || state.error) {
-        const frame = state.callStack.pop();
-        state.ip = frame.ip;
-        return next;
-      }
+    while (state.ip < quot.end && !state.error && state.redirectUrl === null) {
+      if (state.ops++ >= this.maxOps) throw new Error("Op budget exceeded");
       const t = state.tokens[state.ip++];
-      state.ops++;
-      return () => self.dispatch(t, state, runQuotBody);
+      yield* this.dispatchGen(t, state);
     }
-    return runQuotBody;
+    const frame = state.callStack.pop();
+    state.ip = frame.ip;
   }
+
   // ------------------------------------------------------------------------
   // Built-in Words Dictionary
   // ------------------------------------------------------------------------
@@ -574,76 +547,59 @@ export class Interpreter {
       this.push(s, Array.from({ length: len }, (_, i) => [a[i], b[i]]));
     });
     // Combinators
-    d['call'] = (s, next) => {
+    d['call'] = function* (s) {
       const quot = this.pop(s);
-      return this.execQuotation(s, quot, next);
-    };
-    d['call-if'] = (s, next) => {
+      yield* this.execQuotation(s, quot);
+    }.bind(this);
+    d['call-if'] = function* (s) {
       const quot = this.pop(s);
       const flag = this.pop(s);
       if (this.isTruthy(flag)) {
-        return this.execQuotation(s, quot, next);
+        yield* this.execQuotation(s, quot);
       }
-      return next;
-    };
-    d['choose'] = (s, next) => {
+    }.bind(this);
+    d['choose'] = function* (s) {
       const qf = this.pop(s);
       const qt = this.pop(s);
       const flag = this.pop(s);
-      return this.execQuotation(s, this.isTruthy(flag) ? qt : qf, next);
-    };
-    d['each'] = (s, next) => {
+      yield* this.execQuotation(s, this.isTruthy(flag) ? qt : qf);
+    }.bind(this);
+    d['each'] = function* (s) {
       const quot = this.pop(s);
       const arr = this.pop(s);
-      if (!Array.isArray(arr)) return next;
-      let i = 0;
-      const step = () => {
-        if (i >= arr.length) return next;
-        this.push(s, arr[i++]);
-        return this.execQuotation(s, quot, step);
-      };
-      return step;
-    };
-    d['map'] = (s, next) => {
+      if (!Array.isArray(arr)) return;
+      for (const item of arr) {
+        if (s.error || s.redirectUrl !== null) break;
+        this.push(s, item);
+        yield* this.execQuotation(s, quot);
+      }
+    }.bind(this);
+    d['map'] = function* (s) {
       const quot = this.pop(s);
       const arr = this.pop(s);
-      if (!Array.isArray(arr)) { this.push(s, []); return next; }
-      let i = 0;
+      if (!Array.isArray(arr)) { this.push(s, []); return; }
       const res = [];
-      const step = () => {
-        if (i >= arr.length) {
-          this.push(s, res);
-          return next;
-        }
-        this.push(s, arr[i++]);
-        return this.execQuotation(s, quot, () => {
-          res.push(this.pop(s));
-          return step();
-        });
-      };
-      return step;
-    };
-    d['filter'] = (s, next) => {
+      for (const item of arr) {
+        if (s.error || s.redirectUrl !== null) break;
+        this.push(s, item);
+        yield* this.execQuotation(s, quot);
+        res.push(this.pop(s));
+      }
+      if (!s.error && s.redirectUrl === null) this.push(s, res);
+    }.bind(this);
+    d['filter'] = function* (s) {
       const quot = this.pop(s);
       const arr = this.pop(s);
-      if (!Array.isArray(arr)) { this.push(s, []); return next; }
-      let i = 0;
+      if (!Array.isArray(arr)) { this.push(s, []); return; }
       const res = [];
-      const step = () => {
-        if (i >= arr.length) {
-          this.push(s, res);
-          return next;
-        }
-        const elem = arr[i++];
-        this.push(s, elem);
-        return this.execQuotation(s, quot, () => {
-          const flag = this.pop(s);
-          if (this.isTruthy(flag)) res.push(elem);
-          return step();
-        });
-      };
-      return step;
-    };
+      for (const item of arr) {
+        if (s.error || s.redirectUrl !== null) break;
+        this.push(s, item);
+        yield* this.execQuotation(s, quot);
+        if (this.isTruthy(this.pop(s))) res.push(item);
+      }
+      if (!s.error && s.redirectUrl === null) this.push(s, res);
+    }.bind(this);
     // Termination
     d['redirect'] = sync(s => {
       const url = this.pop(s);

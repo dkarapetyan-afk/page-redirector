@@ -23,3 +23,5 @@ Page Redirector is a Firefox/Chrome browser extension that allows users to autom
 1.22 : Fixed compiler failing to bind block opcodes accurately due to outdated verbose token bounds (`COLON` vs `:`), and fixed lexer string boundary rules omitting the `?` character needed for predicates like `str?`. Added comprehensive test-vm assertions verifying stack neutrality and parsing capability for all type conditions.
 
 1.23 : VM execution loop is completely non-recursive for stack-safety (no JS recursion during `FILTER`/`MAP`/`EACH`); frame-based iteration on explicit call stack. Configurable `maxCallStack` limit (default 16, min 8, max 64). Bug in `EACH` where iteration results were incorrectly popped from the stack.
+
+1.24 : **Generator-based Debugger** for both the bytecode VM and AST interpreter; replaced CPS with generators (`yield*`). Higher-order words (`MAP`, `FILTER`, `EACH`) use non-recursive iteration loops.
