@@ -10,7 +10,8 @@
 <body>
     <div class="container">
         <header>
-            <h1>Page Redirector Rules <span id="app-version" style="font-size: 0.5em; color: gray; font-weight: normal; vertical-align: middle;"></span></h1>
+            <h1>Page Redirector Rules <span id="app-version"
+                    style="font-size: 0.5em; color: gray; font-weight: normal; vertical-align: middle;"></span></h1>
             <p>Manage your custom URL redirects here.</p>
         </header>
 
@@ -20,12 +21,12 @@
                 <input type="hidden" id="editing-rule-id" value="">
                 <div class="form-group">
                     <label for="rule-type">Match Type</label>
-                    <select id="rule-type" required>
+                    <select id="rule-type">
                         <option value="exact">Exact Match</option>
-                        <option value="wildcard">Wildcard (*)</option>
                         <option value="regex">Regular Expression</option>
-                        <option value="bytecode">AST Script</option>
-                        <option value="compiled">Compiled VM Script</option>
+                        <option value="wildcard">Wildcard Match</option>
+                        <option value="ast">AST Script</option>
+                        <option value="vm">Compiled VM Script</option>
                     </select>
                 </div>
 
@@ -41,10 +42,14 @@
                     <label id="rule-source-label" for="rule-source">Source URL / Pattern</label>
                     <input type="text" id="rule-source" placeholder="e.g. https://example.com/old" required>
                     <div style="position: relative;">
-                        <textarea id="rule-source-code" placeholder='e.g. host "example.com" eq [ "https://newdomain.com" redirect ] call-if' rows="6" style="display: none; width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
+                        <textarea id="rule-source-code"
+                            placeholder='e.g. host "example.com" eq [ "https://newdomain.com" redirect ] call-if'
+                            rows="6"
+                            style="display: none; width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 4px; font-family: monospace; resize: vertical;"></textarea>
                         <div id="autocomplete-overlay"></div>
                     </div>
-                    <div id="bytecode-warning" class="help-text" style="display: none; color: #f59e0b; margin-top: 5px; font-weight: bold;"></div>
+                    <div id="bytecode-warning" class="help-text"
+                        style="display: none; color: #f59e0b; margin-top: 5px; font-weight: bold;"></div>
                     <div id="regex-help" class="help-text" style="display: none;">
                         <p><strong>Regex Syntax:</strong> Uses standard JavaScript regular expressions.</p>
                         <p>Examples:</p>
@@ -59,26 +64,35 @@
                         <p>Example: <code>https://example.com/images/*</code></p>
                     </div>
                     <div id="bytecode-help" class="help-text" style="display: none;">
-                        <p><strong>Bytecode Syntax:</strong> Use the stack-based language. Emit a string and call <code>redirect</code>.</p>
+                        <p><strong>Bytecode Syntax:</strong> Use the stack-based language. Emit a string and call
+                            <code>redirect</code>.</p>
                         <p>Example: <code>host "example.com" eq [ "https://newdomain.com" redirect ] call-if</code></p>
                     </div>
 
-                    <div id="debug-panel" style="display: none; margin-top: 1rem; border: 1px solid var(--border); border-radius: 4px; padding: 1rem; background-color: var(--surface);">
+                    <div id="debug-panel"
+                        style="display: none; margin-top: 1rem; border: 1px solid var(--border); border-radius: 4px; padding: 1rem; background-color: var(--surface);">
                         <h4 style="margin-top: 0;">Inline Debugger</h4>
                         <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; margin-top: 0.5rem;">
-                            <input type="text" id="debug-url" placeholder="Test URL (e.g. https://example.com/test?id=1)" style="flex: 1;" />
+                            <input type="text" id="debug-url"
+                                placeholder="Test URL (e.g. https://example.com/test?id=1)" style="flex: 1;" />
                             <button type="button" id="debug-btn-start" class="btn btn-secondary">Debug</button>
-                            <button type="button" id="debug-btn-step" class="btn btn-secondary" style="display: none;">Step</button>
-                            <button type="button" id="debug-btn-run" class="btn btn-secondary" style="display: none;" title="Run to completion">Run ⏭</button>
-                            <button type="button" id="debug-btn-stop" class="btn" style="display: none; border: 1px solid var(--border); background-color: var(--background);">Stop</button>
+                            <button type="button" id="debug-btn-step" class="btn btn-secondary"
+                                style="display: none;">Step</button>
+                            <button type="button" id="debug-btn-run" class="btn btn-secondary" style="display: none;"
+                                title="Run to completion">Run ⏭</button>
+                            <button type="button" id="debug-btn-stop" class="btn"
+                                style="display: none; border: 1px solid var(--border); background-color: var(--background);">Stop</button>
                         </div>
                         <div id="debug-readout" style="display: none;">
                             <div style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
-                                <div style="flex: 1; min-width: 0;"><strong>Op:</strong> <span id="debug-instruction" style="font-family: monospace; color: var(--primary);"></span></div>
-                                <div style="flex: 1; text-align: right;"><strong>Status:</strong> <span id="debug-status" style="font-weight: bold;"></span></div>
+                                <div style="flex: 1; min-width: 0;"><strong>Op:</strong> <span id="debug-instruction"
+                                        style="font-family: monospace; color: var(--primary);"></span></div>
+                                <div style="flex: 1; text-align: right;"><strong>Status:</strong> <span
+                                        id="debug-status" style="font-weight: bold;"></span></div>
                             </div>
                             <div><strong>Stack State:</strong></div>
-                            <pre id="debug-stack" style="background-color: var(--background); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; overflow-x: auto; min-height: 48px; font-size: 0.9em; margin-bottom: 0; white-space: pre-wrap; word-wrap: break-word;"></pre>
+                            <pre id="debug-stack"
+                                style="background-color: var(--background); padding: 0.5rem; border-radius: 4px; margin-top: 0.5rem; overflow-x: auto; min-height: 48px; font-size: 0.9em; margin-bottom: 0; white-space: pre-wrap; word-wrap: break-word;"></pre>
                         </div>
                     </div>
                 </div>
@@ -93,6 +107,18 @@
                     </div>
                 </div>
 
+                <div class="form-group" id="engine-group" style="display: none;">
+                    <label for="rule-engine">Execution Engine</label>
+                    <select id="rule-engine">
+                        <option value="vm-js">JS Bytecode VM</option>
+                        <option value="vm-wasm">WASM VM [Experimental]</option>
+                        <option value="ast">AST Interpreter</option>
+                    </select>
+                    <div class="help-text">
+                        <p>Select which engine handles this script. WASM is faster for complex rules.</p>
+                    </div>
+                </div>
+
                 <div style="display: flex; gap: 0.5rem;">
                     <button type="submit" id="submit-rule-btn" class="btn btn-primary">Add Rule</button>
                     <button type="button" id="cancel-edit-btn" class="btn"
@@ -101,20 +127,6 @@
             </form>
         </section>
 
-        <section class="global-settings-section" style="margin-bottom: 2rem; padding: 1.5rem; background-color: var(--surface); border: 1px solid var(--border); border-radius: 8px;">
-            <h2 style="margin-top: 0;">Global Settings</h2>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="execution-engine">Default Execution Engine (for Compiled Scripts)</label>
-                <select id="execution-engine" style="max-width: 300px;">
-                    <option value="ast">Original (AST Interpreter)</option>
-                    <option value="bytecode-js">Standard (JS Bytecode VM)</option>
-                    <option value="bytecode-wasm">High Performance (WASM VM) [Experimental]</option>
-                </select>
-                <div class="help-text">
-                    <p>Select which engine handles compiled VM scripts. WASM is significantly faster for complex rules.</p>
-                </div>
-            </div>
-        </section>
 
         <section class="rules-list-section">
             <div class="rules-header-row">

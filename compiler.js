@@ -1,7 +1,7 @@
 import { Interpreter } from './interpreter.js';
 import { Op, BuiltinMap } from './opcodes.js';
 
-export const COMPILER_VERSION = 1;
+export const COMPILER_VERSION = 2;
 
 export class Compiler {
   static compile(source) {

@@ -27,3 +27,5 @@ Page Redirector is a Firefox/Chrome browser extension that allows users to autom
 1.24 : **Generator-based Debugger** for both the bytecode VM and AST interpreter; replaced CPS with generators (`yield*`). Higher-order words (`MAP`, `FILTER`, `EACH`) use non-recursive iteration loops.
 
 1.25 : **WASM VM Engine** Rust-based execution alternative; 16-bit opcode arguments (up to 65,535).
+
+1.26 : **Per-Rule Execution Engine Selection**: allow choosing between JS VM, WASM VM, or AST Interpreter for each rule.

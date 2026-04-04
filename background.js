@@ -7,7 +7,6 @@ const vm = new Interpreter();
 
 let rules = []; // Rules wrapped with compiled Regex objects
 let wasmReady = false;
-let executionEngine = 'bytecode-js'; // Default engine
 
 // Load and initialize WASM VM for web environment
 init().then(() => {
@@ -17,10 +16,37 @@ init().then(() => {
     console.error("Failed to initialize WASM VM:", e);
 });
 
+// Migration function for existing rules
+function migrateRule(rule) {
+    let changed = false;
+    // Migrate match types
+    if (rule.type === 'bytecode') {
+        rule.type = 'ast';
+        changed = true;
+    } else if (rule.type === 'compiled') {
+        rule.type = 'vm';
+        changed = true;
+    }
+
+    // Migrate engine names
+    if (rule.engine === 'bytecode-js') {
+        rule.engine = 'vm-js';
+        changed = true;
+    } else if (rule.engine === 'bytecode-wasm') {
+        rule.engine = 'vm-wasm';
+        changed = true;
+    }
+    return changed;
+}
+
 function processRules(rawRules) {
     let needsSave = false;
     
     const mapped = rawRules.map(rule => {
+        if (migrateRule(rule)) {
+            needsSave = true;
+        }
+
         let compiledRegex = null;
         if (rule.type === 'regex') {
             try {
@@ -36,7 +62,7 @@ function processRules(rawRules) {
             } catch (e) {
                 console.error("Failed to compile wildcard rule:", rule.source, e);
             }
-        } else if ((rule.type === 'bytecode' || rule.type === 'compiled') && rule.matchRegex) {
+        } else if (rule.type === 'vm' && rule.matchRegex) {
             try {
                 compiledRegex = new RegExp(rule.matchRegex, 'gmv');
             } catch (e) {
@@ -44,7 +70,7 @@ function processRules(rawRules) {
             }
         }
         
-        if (rule.type === 'compiled') {
+        if (rule.type === 'vm') {
             if (rule.compilerVersion !== COMPILER_VERSION) {
                 console.log(`Auto-migrating compiled rule [${rule.id}] to version ${COMPILER_VERSION}`);
                 try {
@@ -77,15 +103,12 @@ function processRules(rawRules) {
 let pauseUntil = 0;
 
 // Load rules initially
-browser.storage.local.get(["redirectRules", "pauseUntil", "executionEngine"]).then((data) => {
+browser.storage.local.get(["redirectRules", "pauseUntil"]).then((data) => {
     if (data.redirectRules) {
         rules = processRules(data.redirectRules);
     }
     if (data.pauseUntil !== undefined) {
         pauseUntil = data.pauseUntil;
-    }
-    if (data.executionEngine) {
-        executionEngine = data.executionEngine;
     }
 });
 
@@ -97,9 +120,6 @@ browser.storage.onChanged.addListener((changes, area) => {
         }
         if (changes.pauseUntil !== undefined) {
             pauseUntil = changes.pauseUntil.newValue || 0;
-        }
-        if (changes.executionEngine) {
-            executionEngine = changes.executionEngine.newValue || 'bytecode-js';
         }
     }
 });
@@ -124,7 +144,7 @@ function checkRedirect(url) {
         } else if ((rule.type === "regex" || rule.type === "wildcard") && rule._compiledRegex) {
             rule._compiledRegex.lastIndex = 0;
             shouldRedirect = rule._compiledRegex.test(url);
-        } else if (rule.type === "bytecode" || rule.type === "compiled") {
+        } else if (rule.type === "ast" || rule.type === "vm") {
             if (rule._compiledRegex) {
                 rule._compiledRegex.lastIndex = 0;
                 if (!rule._compiledRegex.test(url)) {
@@ -133,10 +153,15 @@ function checkRedirect(url) {
             }
             try {
                 let res;
-                if (rule.type === "compiled") {
-                    if (executionEngine === 'bytecode-wasm' && wasmReady) {
+                // rule.type 'ast' uses 'ast' engine (Interpreter)
+                // rule.type 'vm' defaults to 'vm-js' engine (Bytecode VM)
+                const defaultEngine = rule.type === 'ast' ? 'ast' : 'vm-js';
+                const engine = rule.engine || defaultEngine;
+
+                if (rule.type === "vm") {
+                    if (engine === 'vm-wasm' && wasmReady) {
                         res = wasmExecute(new Uint8Array(rule.bytecode), rule.constants, url, {});
-                    } else if (executionEngine === 'ast') {
+                    } else if (engine === 'ast') {
                          res = vm.execute(rule.source, url);
                     } else {
                         res = VM.execute(rule.bytecode, rule.constants, url);

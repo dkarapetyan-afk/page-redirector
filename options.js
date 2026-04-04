@@ -12,7 +12,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('add-rule-form');
     const rulesContainer = document.getElementById('rules-container');
     const template = document.getElementById('rule-template');
-    const executionEngineSelect = document.getElementById('execution-engine');
+    const ruleEngineSelect = document.getElementById('rule-engine');
+    const engineGroup = document.getElementById('engine-group');
 
     // Edit mode elements
     const editingRuleIdInput = document.getElementById('editing-rule-id');
@@ -39,11 +40,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const debugStatus = document.getElementById('debug-status');
     const debugStack = document.getElementById('debug-stack');
 
-    if (executionEngineSelect) {
-        executionEngineSelect.addEventListener('change', () => {
-            browser.storage.local.set({ executionEngine: executionEngineSelect.value });
-        });
-    }
 
     let debugSession = null;
     let debugIsCompiled = false;
@@ -241,14 +237,43 @@ document.addEventListener('DOMContentLoaded', () => {
         ruleSourceCode.addEventListener('blur', hideAutocomplete);
     }
 
+    // Migration function for existing rules
+    function migrateRule(rule) {
+        let changed = false;
+        // Migrate match types
+        if (rule.type === 'bytecode') {
+            rule.type = 'ast';
+            changed = true;
+        } else if (rule.type === 'compiled') {
+            rule.type = 'vm';
+            changed = true;
+        }
+
+        // Migrate engine names
+        if (rule.engine === 'bytecode-js') {
+            rule.engine = 'vm-js';
+            changed = true;
+        } else if (rule.engine === 'bytecode-wasm') {
+            rule.engine = 'vm-wasm';
+            changed = true;
+        }
+        return changed;
+    }
+
     // Load rules and settings from storage
     function loadRules() {
-        browser.storage.local.get(["redirectRules", "executionEngine"]).then((data) => {
-            rules = data.redirectRules || [];
-            if (data.executionEngine && executionEngineSelect) {
-                executionEngineSelect.value = data.executionEngine;
+        browser.storage.local.get(["redirectRules"]).then((data) => {
+            let needsSave = false;
+            rules = (data.redirectRules || []).map(rule => {
+                if (migrateRule(rule)) needsSave = true;
+                return rule;
+            });
+            
+            if (needsSave) {
+                saveRules(rules);
+            } else {
+                renderRules();
             }
-            renderRules();
         });
     }
 
@@ -305,9 +330,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Populate the form with this rule's data
                 editingRuleIdInput.value = rule.id;
                 ruleTypeInput.value = rule.type;
-                if (rule.type === 'bytecode' || rule.type === 'compiled') {
+                if (rule.type === 'ast' || rule.type === 'vm') {
                     ruleSourceCode.value = rule.source;
                     if (ruleBytecodeMatch) ruleBytecodeMatch.value = rule.matchRegex || '';
+                    if (ruleEngineSelect) ruleEngineSelect.value = rule.engine || 'vm-js';
                     ruleSourceInput.value = '';
                     ruleDestInput.value = '';
                     checkBytecodeWarnings();
@@ -348,13 +374,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const type = e.target.value;
         const isRegex = type === 'regex';
         const isWildcard = type === 'wildcard';
-        const isBytecode = type === 'bytecode' || type === 'compiled';
+        const isBytecode = type === 'ast' || type === 'vm';
 
         regexHelp.style.display = isRegex ? 'block' : 'none';
         regexDestHelp.style.display = isRegex ? 'block' : 'none';
         wildcardHelp.style.display = isWildcard ? 'block' : 'none';
         if (bytecodeHelp) bytecodeHelp.style.display = isBytecode ? 'block' : 'none';
         if (debugPanel) debugPanel.style.display = isBytecode ? 'block' : 'none';
+        if (engineGroup) engineGroup.style.display = isBytecode ? 'block' : 'none';
 
         if (isBytecode) {
             ruleSourceInput.style.display = 'none';
@@ -363,10 +390,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ruleSourceCode.required = true;
 
             if (bytecodeMatchGroup) bytecodeMatchGroup.style.display = 'block';
-
             destGroup.style.display = 'none';
             ruleDestInput.required = false;
-            ruleSourceLabel.textContent = type === 'compiled' ? "Compiled VM Script" : "Bytecode Script";
+            ruleSourceLabel.textContent = type === 'vm' ? "Compiled VM Script" : "AST Script";
         } else {
             ruleSourceInput.style.display = 'block';
             ruleSourceInput.required = true;
@@ -403,9 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
 
         const type = ruleTypeInput.value;
-        const isBytecode = type === 'bytecode' || type === 'compiled';
+        const isBytecode = type === 'ast' || type === 'vm';
         const source = isBytecode ? ruleSourceCode.value : ruleSourceInput.value;
         const matchRegex = isBytecode && ruleBytecodeMatch ? ruleBytecodeMatch.value : "";
+        const engine = isBytecode && ruleEngineSelect ? ruleEngineSelect.value : "vm-js";
         const destination = isBytecode ? "" : ruleDestInput.value;
         const editingId = editingRuleIdInput.value;
 
@@ -421,7 +448,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ...updatedRules[ruleIndex],
                     type,
                     source,
-                    destination
+                    destination,
+                    engine
                 };
                 if (isBytecode && matchRegex) {
                     updatedRules[ruleIndex].matchRegex = matchRegex;
@@ -429,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     delete updatedRules[ruleIndex].matchRegex;
                 }
                 
-                if (type === 'compiled') {
+                if (type === 'vm') {
                     try {
                         const comp = Compiler.compile(source);
                         updatedRules[ruleIndex].bytecode = comp.bytecode;
@@ -455,6 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 type,
                 source,
                 destination,
+                engine,
                 enabled: true,
                 createdAt: Date.now(),
                 hitCount: 0
@@ -462,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isBytecode && matchRegex) {
                 newRule.matchRegex = matchRegex;
             }
-            if (type === 'compiled') {
+            if (type === 'vm') {
                 try {
                     const comp = Compiler.compile(source);
                     newRule.bytecode = comp.bytecode;
@@ -772,7 +801,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = debugUrlInput.value || "https://example.com/test";
             const source = ruleSourceCode.value;
             const type = ruleTypeInput.value;
-            debugIsCompiled = (type === 'compiled');
+            debugIsCompiled = (type === 'vm');
 
             try {
                 if (debugIsCompiled) {
