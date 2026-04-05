@@ -163,7 +163,7 @@ function checkRedirect(url) {
                 const engine = rule.engine || "ast";
 
                 if (engine === 'vm-wasm' && wasmReady) {
-                    res = wasmExecute(new Uint8Array(rule.bytecode), rule.constants, url, {});
+                    res = wasmExecute(rule.bytecode, rule.constants, url, {});
                 } else if (engine === 'vm-js') {
                     res = VM.execute(rule.bytecode, rule.constants, url);
                 } else {

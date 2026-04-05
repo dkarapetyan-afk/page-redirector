@@ -5,7 +5,7 @@ use url::Url;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum Value {
-    Int(i32),
+    Int(i16),
     Str(String),
     Array(Vec<Value>),
     Null,
@@ -51,6 +51,10 @@ pub enum Op {
     SetParam = 50, RemoveParam = 51,
     Split = 60, ParamKeys = 61, ParamValues = 62, PathSegments = 63,
     Len = 64, Get = 65, Join = 66, Indices = 67, Slice = 68, Zip = 69,
+
+    Add = 70, Sub = 71, Mul = 72, Div = 73, Mod = 74,
+    Gt = 75, Lt = 76, Gte = 77, Lte = 78,
+
     Call = 80, CallIf = 81, Choose = 82, Each = 83, Map = 84, Filter = 85,
     Redirect = 90, Skip = 91,
     PushBlock = 101, Return = 102, CallCustom = 103, MakeArray = 104,
@@ -70,6 +74,8 @@ impl From<u8> for Op {
             50 => Op::SetParam, 51 => Op::RemoveParam,
             60 => Op::Split, 61 => Op::ParamKeys, 62 => Op::ParamValues, 63 => Op::PathSegments,
             64 => Op::Len, 65 => Op::Get, 66 => Op::Join, 67 => Op::Indices, 68 => Op::Slice, 69 => Op::Zip,
+            70 => Op::Add, 71 => Op::Sub, 72 => Op::Mul, 73 => Op::Div, 74 => Op::Mod,
+            75 => Op::Gt, 76 => Op::Lt, 77 => Op::Gte, 78 => Op::Lte,
             80 => Op::Call, 81 => Op::CallIf, 82 => Op::Choose, 83 => Op::Each, 84 => Op::Map, 85 => Op::Filter,
             90 => Op::Redirect, 91 => Op::Skip,
             101 => Op::PushBlock, 102 => Op::Return, 103 => Op::CallCustom, 104 => Op::MakeArray,
@@ -177,7 +183,7 @@ impl<'a> VM<'a> {
 
             match op {
                 Op::PushInt => {
-                    let val = (self.bytecode[self.ip] as i32) | ((self.bytecode[self.ip + 1] as i32) << 8);
+                    let val = ((self.bytecode[self.ip] as u16) | ((self.bytecode[self.ip + 1] as u16) << 8)) as i16;
                     self.ip += 2;
                     self.stack.push(Value::Int(val));
                 }
@@ -191,7 +197,8 @@ impl<'a> VM<'a> {
                     self.ip = tgt;
                 }
                 Op::PushBlock => {
-                    let val = (self.bytecode[self.ip] as i32) | ((self.bytecode[self.ip + 1] as i32) << 8);
+                    // PUSH_BLOCK also pushes an IP/integer
+                    let val = ((self.bytecode[self.ip] as u16) | ((self.bytecode[self.ip + 1] as u16) << 8)) as i16;
                     self.ip += 2;
                     self.stack.push(Value::Int(val));
                 }
@@ -360,6 +367,57 @@ impl<'a> VM<'a> {
                     let a = self.pop_val().is_truthy();
                     self.stack.push(Value::Int(if !a { 1 } else { 0 }));
                 }
+                Op::Add => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(a.wrapping_add(b)));
+                }
+                Op::Sub => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(a.wrapping_sub(b)));
+                }
+                Op::Mul => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(a.wrapping_mul(b)));
+                }
+                Op::Div => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    if b == 0 {
+                        return VMResult { success: false, redirect: None, stack: self.stack.clone(), ops: self.ops, error: Some(String::from("Division by zero")) };
+                    }
+                    self.stack.push(Value::Int(a / b));
+                }
+                Op::Mod => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    if b == 0 {
+                        return VMResult { success: false, redirect: None, stack: self.stack.clone(), ops: self.ops, error: Some(String::from("Division by zero")) };
+                    }
+                    self.stack.push(Value::Int(a % b));
+                }
+                Op::Gt => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(if a > b { 1 } else { 0 }));
+                }
+                Op::Lt => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(if a < b { 1 } else { 0 }));
+                }
+                Op::Gte => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(if a >= b { 1 } else { 0 }));
+                }
+                Op::Lte => {
+                    let b = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    let a = match self.pop_val() { Value::Int(i) => i, _ => 0 };
+                    self.stack.push(Value::Int(if a <= b { 1 } else { 0 }));
+                }
                 Op::StrQ => {
                     let has = match self.stack.last() { Some(Value::Str(_)) => 1, _ => 0 };
                     self.stack.push(Value::Int(has));
@@ -451,7 +509,7 @@ impl<'a> VM<'a> {
                     self.stack.push(Value::Array(segs));
                 }
                 Op::Len => {
-                    let a = match self.pop_val() { Value::Array(v) => v.len() as i32, _ => 0 };
+                    let a = match self.pop_val() { Value::Array(v) => v.len() as i16, _ => 0 };
                     self.stack.push(Value::Int(a));
                 }
                 Op::Get => {
@@ -467,7 +525,7 @@ impl<'a> VM<'a> {
                 }
                 Op::Indices => {
                     let a = match self.pop_val() { Value::Array(v) => v, _ => vec![] };
-                    let res: Vec<Value> = (0..a.len()).map(|i| Value::Int(i as i32)).collect();
+                    let res: Vec<Value> = (0..a.len()).map(|i| Value::Int(i as i16)).collect();
                     self.stack.push(Value::Array(res));
                 }
                 Op::Slice => {

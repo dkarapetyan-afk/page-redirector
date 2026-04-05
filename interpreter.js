@@ -132,9 +132,13 @@ export class Interpreter {
         pushToken('STRING', str);
         continue;
       }
-      // Numbers
-      if (/[0-9]/.test(char)) {
+      // Numbers and negative numbers
+      if (/[0-9]/.test(char) || (char === '-' && i + 1 < source.length && /[0-9]/.test(source[i+1]))) {
         let numStr = "";
+        if (char === '-') {
+          numStr = "-";
+          advance();
+        }
         while (i < source.length && /[0-9]/.test(source[i])) {
           numStr += source[i];
           advance();
@@ -143,9 +147,9 @@ export class Interpreter {
         continue;
       }
       // Words
-      if (/[a-zA-Z_$?]/.test(char)) {
+      if (/[a-zA-Z_$?+\-*/%><]/.test(char)) {
         let wordStr = "";
-        while (i < source.length && /[a-zA-Z0-9_$-?]/.test(source[i])) {
+        while (i < source.length && /[a-zA-Z0-9_$\-?+\-*/%><=]/.test(source[i])) {
           wordStr += source[i];
           advance();
         }
@@ -194,13 +198,14 @@ export class Interpreter {
 
     if (state.error) {
       if (state.error === "SKIP_SIGNAL") {
-        return { success: true, redirect: null, ops: state.ops };
+        return { success: true, redirect: null, stack: state.stack, ops: state.ops };
       }
       return { success: false, error: state.error };
     }
     return {
       success: true,
       redirect: state.redirectUrl,
+      stack: state.stack,
       ops: state.ops
     };
   }
@@ -400,6 +405,10 @@ export class Interpreter {
 
   push(state, val) {
     if (state.stack.length >= this.maxStack) throw new Error("Stack overflow");
+    if (typeof val === 'number') {
+      // Force 16-bit signed integer with wrapping (2's complement)
+      val = (val << 16) >> 16;
+    }
     if (typeof val === 'string' && val.length > this.maxStringLen) {
       throw new Error(`String exceeds max length of ${this.maxStringLen}`);
     }
@@ -482,6 +491,10 @@ export class Interpreter {
     // Comparison
     d['eq'] = sync(s => { const a = this.pop(s), b = this.pop(s); this.push(s, a === b ? 1 : 0); });
     d['neq'] = sync(s => { const a = this.pop(s), b = this.pop(s); this.push(s, a !== b ? 1 : 0); });
+    d['>'] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a > b ? 1 : 0); });
+    d['<'] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a < b ? 1 : 0); });
+    d['>='] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a >= b ? 1 : 0); });
+    d['<='] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a <= b ? 1 : 0); });
     d['starts-with'] = sync(s => { const p = this.pop(s), v = this.pop(s); this.push(s, typeof v === 'string' && v.startsWith(p) ? 1 : 0); });
     d['ends-with'] = sync(s => { const p = this.pop(s), v = this.pop(s); this.push(s, typeof v === 'string' && v.endsWith(p) ? 1 : 0); });
     d['contains'] = sync(s => { const n = this.pop(s), h = this.pop(s); this.push(s, typeof h === 'string' && h.includes(n) ? 1 : 0); });
@@ -489,6 +502,20 @@ export class Interpreter {
     d['and'] = sync(s => { const a = this.pop(s), b = this.pop(s); this.push(s, (this.isTruthy(a) && this.isTruthy(b)) ? 1 : 0); });
     d['or'] = sync(s => { const a = this.pop(s), b = this.pop(s); this.push(s, (this.isTruthy(a) || this.isTruthy(b)) ? 1 : 0); });
     d['not'] = sync(s => { const a = this.pop(s); this.push(s, !this.isTruthy(a) ? 1 : 0); });
+    // Arithmetic
+    d['+'] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a + b); });
+    d['-'] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a - b); });
+    d['*'] = sync(s => { const b = this.pop(s), a = this.pop(s); this.push(s, a * b); });
+    d['/'] = sync(s => {
+      const b = this.pop(s), a = this.pop(s);
+      if (b === 0) throw new Error("Division by zero");
+      this.push(s, Math.trunc(a / b));
+    });
+    d['%'] = sync(s => {
+      const b = this.pop(s), a = this.pop(s);
+      if (b === 0) throw new Error("Division by zero");
+      this.push(s, a % b);
+    });
     // Type predicates (non-destructive: peek top, push flag)
     d['str?'] = sync(s => { const v = s.stack[s.stack.length - 1]; this.push(s, typeof v === 'string' ? 1 : 0); });
     d['int?'] = sync(s => { const v = s.stack[s.stack.length - 1]; this.push(s, typeof v === 'number' ? 1 : 0); });

@@ -24,7 +24,7 @@ export class VM {
         const op = bytecode[ip++];
 
         switch (op) {
-          case Op.PUSH_INT: stack.push(bytecode[ip] | (bytecode[ip + 1] << 8)); ip += 2; break;
+          case Op.PUSH_INT: stack.push((bytecode[ip] | (bytecode[ip + 1] << 8)) << 16 >> 16); ip += 2; break;
           case Op.PUSH_STR: stack.push(constants[bytecode[ip] | (bytecode[ip + 1] << 8)]); ip += 2; break;
           case Op.JUMP: ip = bytecode[ip] | (bytecode[ip + 1] << 8); break;
           case Op.PUSH_BLOCK: stack.push(bytecode[ip] | (bytecode[ip + 1] << 8)); ip += 2; break;
@@ -129,6 +129,54 @@ export class VM {
             break;
           }
           case Op.NOT: stack.push(!stack.pop() ? 1 : 0); break;
+
+          case Op.ADD: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(((a + b) << 16) >> 16);
+            break;
+          }
+          case Op.SUB: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(((a - b) << 16) >> 16);
+            break;
+          }
+          case Op.MUL: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(((a * b) << 16) >> 16);
+            break;
+          }
+          case Op.DIV: {
+            const b = stack.pop(), a = stack.pop();
+            if (b === 0) throw new Error("Division by zero");
+            stack.push((Math.trunc(a / b) << 16) >> 16);
+            break;
+          }
+          case Op.MOD: {
+            const b = stack.pop(), a = stack.pop();
+            if (b === 0) throw new Error("Division by zero");
+            stack.push(((a % b) << 16) >> 16);
+            break;
+          }
+          case Op.GT: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(a > b ? 1 : 0);
+            break;
+          }
+          case Op.LT: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(a < b ? 1 : 0);
+            break;
+          }
+          case Op.GTE: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(a >= b ? 1 : 0);
+            break;
+          }
+          case Op.LTE: {
+            const b = stack.pop(), a = stack.pop();
+            stack.push(a <= b ? 1 : 0);
+            break;
+          }
           case Op.STR_Q: {
             const v = stack[stack.length - 1];
             stack.push(typeof v === 'string' ? 1 : 0);
@@ -372,12 +420,12 @@ export class VM {
       
       // Update instruction label for UI
       switch (op) {
-        case Op.PUSH_INT:   st._currentInstruction = `PUSH_INT ${bytecode[st.ip+1]}`;    break;
-        case Op.PUSH_STR:   st._currentInstruction = `PUSH_STR "${constants[bytecode[st.ip+1]]}"`; break;
-        case Op.JUMP:       st._currentInstruction = `JUMP ${bytecode[st.ip+1]}`;        break;
-        case Op.PUSH_BLOCK: st._currentInstruction = `PUSH_BLOCK ${bytecode[st.ip+1]}`;  break;
-        case Op.CALL_CUSTOM:st._currentInstruction = `CALL_CUSTOM ${bytecode[st.ip+1]}`; break;
-        case Op.MAKE_ARRAY: st._currentInstruction = `MAKE_ARRAY ${bytecode[st.ip+1]}`;  break;
+        case Op.PUSH_INT:   st._currentInstruction = `PUSH_INT ${(bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)) << 16 >> 16}`; break;
+        case Op.PUSH_STR:   st._currentInstruction = `PUSH_STR "${constants[bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)]}"`; break;
+        case Op.JUMP:       st._currentInstruction = `JUMP ${bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)}`;        break;
+        case Op.PUSH_BLOCK: st._currentInstruction = `PUSH_BLOCK ${bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)}`;  break;
+        case Op.CALL_CUSTOM:st._currentInstruction = `CALL_CUSTOM ${bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)}`; break;
+        case Op.MAKE_ARRAY: st._currentInstruction = `MAKE_ARRAY ${bytecode[st.ip+1] | (bytecode[st.ip+2] << 8)}`;  break;
         case Op.EACH:       st._currentInstruction = 'EACH';   break;
         case Op.MAP:        st._currentInstruction = 'MAP';    break;
         case Op.FILTER:     st._currentInstruction = 'FILTER'; break;
@@ -390,10 +438,25 @@ export class VM {
       st.ip++; // Consume op now
 
       switch (op) {
-        case Op.PUSH_INT: stack.push(bytecode[st.ip++]); break;
-        case Op.PUSH_STR: stack.push(constants[bytecode[st.ip++]]); break;
-        case Op.JUMP:     st.ip = bytecode[st.ip]; break;
-        case Op.PUSH_BLOCK: stack.push(bytecode[st.ip++]); break;
+        case Op.PUSH_INT: {
+          stack.push((bytecode[st.ip] | (bytecode[st.ip + 1] << 8)) << 16 >> 16);
+          st.ip += 2;
+          break;
+        }
+        case Op.PUSH_STR: {
+          stack.push(constants[bytecode[st.ip] | (bytecode[st.ip + 1] << 8)]);
+          st.ip += 2;
+          break;
+        }
+        case Op.JUMP: {
+          st.ip = bytecode[st.ip] | (bytecode[st.ip + 1] << 8);
+          break;
+        }
+        case Op.PUSH_BLOCK: {
+          stack.push(bytecode[st.ip] | (bytecode[st.ip + 1] << 8));
+          st.ip += 2;
+          break;
+        }
         case Op.RETURN: {
           if (callStack.length === 0) return;
           this._handleReturn(st);
@@ -401,13 +464,15 @@ export class VM {
         }
         case Op.CALL_CUSTOM: {
           if (callStack.length >= st.maxCallStack) throw new Error("Call stack overflow");
-          const tgt = bytecode[st.ip++];
+          const tgt = bytecode[st.ip] | (bytecode[st.ip + 1] << 8);
+          st.ip += 2;
           callStack.push(st.ip);
           st.ip = tgt;
           break;
         }
         case Op.MAKE_ARRAY: {
-          const len = bytecode[st.ip++];
+          const len = bytecode[st.ip] | (bytecode[st.ip + 1] << 8);
+          st.ip += 2;
           const arr = len > 0 ? stack.splice(-len) : [];
           stack.push(arr);
           break;
@@ -491,6 +556,54 @@ export class VM {
           break;
         }
         case Op.NOT: stack.push(!stack.pop() ? 1 : 0); break;
+
+        case Op.ADD: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(((a + b) << 16) >> 16);
+          break;
+        }
+        case Op.SUB: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(((a - b) << 16) >> 16);
+          break;
+        }
+        case Op.MUL: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(((a * b) << 16) >> 16);
+          break;
+        }
+        case Op.DIV: {
+          const b = stack.pop(), a = stack.pop();
+          if (b === 0) throw new Error("Division by zero");
+          stack.push((Math.trunc(a / b) << 16) >> 16);
+          break;
+        }
+        case Op.MOD: {
+          const b = stack.pop(), a = stack.pop();
+          if (b === 0) throw new Error("Division by zero");
+          stack.push(((a % b) << 16) >> 16);
+          break;
+        }
+        case Op.GT: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(a > b ? 1 : 0);
+          break;
+        }
+        case Op.LT: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(a < b ? 1 : 0);
+          break;
+        }
+        case Op.GTE: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(a >= b ? 1 : 0);
+          break;
+        }
+        case Op.LTE: {
+          const b = stack.pop(), a = stack.pop();
+          stack.push(a <= b ? 1 : 0);
+          break;
+        }
         case Op.STR_Q: {
           const v = stack[stack.length - 1];
           stack.push(typeof v === 'string' ? 1 : 0);

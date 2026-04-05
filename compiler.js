@@ -1,7 +1,7 @@
 import { Interpreter } from './interpreter.js';
 import { Op, BuiltinMap } from './opcodes.js';
 
-export const COMPILER_VERSION = 2;
+export const COMPILER_VERSION = 3;
 
 export class Compiler {
   static compile(source) {
@@ -147,6 +147,6 @@ export class Compiler {
         throw new Error(`Compiler internal linking error for: ${patch.name}`);
       }
     }
-    return { bytecode, constants };
+    return { bytecode: new Uint8Array(bytecode), constants };
   }
 }

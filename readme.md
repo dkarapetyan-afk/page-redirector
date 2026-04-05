@@ -31,3 +31,5 @@ Page Redirector is a Firefox/Chrome browser extension that allows users to autom
 1.26 : **Per-Rule Execution Engine Selection**: allow choosing between JS VM, WASM VM, or AST Interpreter for each rule.
 
 1.27 : **Unified Script Type**: Consolidated `ast` and `vm` rule types into a single `script` type. Individual rules now specify their execution engine (AST Interpreter, JS VM, or WASM VM).
+
+1.28 : **16-bit signed arithmetic and comparison operators**: Added `+`, `-`, `*`, `/`, `%` and `>`, `<`, `>=`, `<=`. All arithmetic uses 2's complement wrapping. Integer division truncates towards zero. Division/modulo by zero is a fatal error. Negative number lexing. `COMPILER_VERSION` changed to 3 to ensure bytecode re-compilation.

@@ -59,6 +59,17 @@ export const Op = {
     SLICE: 68,
     ZIP: 69,
     
+    // Arithmetic & Comparison
+    ADD: 70,
+    SUB: 71,
+    MUL: 72,
+    DIV: 73,
+    MOD: 74,
+    GT: 75,
+    LT: 76,
+    GTE: 77,
+    LTE: 78,
+    
     // Flow Control
     CALL: 80,
     CALL_IF: 81,
@@ -94,6 +105,8 @@ export const BuiltinMap = {
     "set-param": Op.SET_PARAM, "remove-param": Op.REMOVE_PARAM,
     "split": Op.SPLIT, "param-keys": Op.PARAM_KEYS, "param-values": Op.PARAM_VALUES, "path-segments": Op.PATH_SEGMENTS,
     "len": Op.LEN, "get": Op.GET, "join": Op.JOIN, "indices": Op.INDICES, "slice": Op.SLICE, "zip": Op.ZIP,
+    "+": Op.ADD, "-": Op.SUB, "*": Op.MUL, "/": Op.DIV, "%": Op.MOD,
+    ">": Op.GT, "<": Op.LT, ">=": Op.GTE, "<=": Op.LTE,
     "call": Op.CALL, "call-if": Op.CALL_IF, "choose": Op.CHOOSE, "each": Op.EACH, "map": Op.MAP, "filter": Op.FILTER,
     "redirect": Op.REDIRECT, "skip": Op.SKIP
 };

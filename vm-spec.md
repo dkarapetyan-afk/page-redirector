@@ -34,7 +34,7 @@ array_lit   = "{" literal* "}" ;             (* array literal *)
 quotation   = "[" item* "]" ;               (* reified code block *)
 
 STRING      = '"' ( ~'"' | '\"' )* '"' ;
-NUMBER      = [0-9]+ ;
+NUMBER      = ["-"] [0-9]+ ;
 IDENT       = [a-zA-Z_$][a-zA-Z0-9_$-]* ;
 
 comment     = "(" ~")"* ")" ;                (* inline comment *)
@@ -82,7 +82,7 @@ The VM operates on three types:
 | Type | Representation | Notes |
 |---|---|---|
 | **String** | JavaScript `string` | Max 4,096 bytes |
-| **Integer** | JavaScript `number` | Used for booleans, indices, lengths |
+| **Integer** | 16-bit Signed `int16` | Range: -32,768 to 32,767. Strict 2's complement wrapping. |
 | **Array** | JavaScript `Array` | Ordered list of strings or integers. Max 256 elements. |
 | **Quotation** | Token range `{start, end}` | A reified code block — a reference to a range of tokens in the program. Pushed by `[…]`, executed by `call`. |
 
@@ -116,25 +116,14 @@ All expect a URL string on top of the stack.
 | `segment` | `( url n -- seg )` | Get Nth path segment (0-indexed) |
 | `has-param` | `( url key -- flag )` | `1` if param exists, `0` otherwise |
 
-### 3.3 Comparison
+### 3.3 URL Mutation
 
 | Word | Stack Effect | Description |
 |---|---|---|
-| `eq` | `( a b -- flag )` | Equal |
-| `neq` | `( a b -- flag )` | Not equal |
-| `starts-with` | `( str prefix -- flag )` | String starts with prefix |
-| `ends-with` | `( str suffix -- flag )` | String ends with suffix |
-| `contains` | `( haystack needle -- flag )` | String contains substring |
+| `set-param` | `( url key val -- url' )` | Set query param |
+| `remove-param` | `( url key -- url' )` | Remove query param |
 
-### 3.4 Logic
-
-| Word | Stack Effect | Description |
-|---|---|---|
-| `and` | `( a b -- flag )` | Logical AND |
-| `or` | `( a b -- flag )` | Logical OR |
-| `not` | `( a -- flag )` | Logical NOT |
-
-### 3.5 String Operations
+### 3.4 String Operations
 
 | Word | Stack Effect | Description |
 |---|---|---|
@@ -143,14 +132,7 @@ All expect a URL string on top of the stack.
 | `replace-all` | `( str search repl -- result )` | Replace all occurrences |
 | `substr` | `( str start len -- result )` | Extract substring |
 
-### 3.6 URL Mutation
-
-| Word | Stack Effect | Description |
-|---|---|---|
-| `set-param` | `( url key val -- url' )` | Set query param |
-| `remove-param` | `( url key -- url' )` | Remove query param |
-
-### 3.7 String → Array
+### 3.5 String → Array
 
 | Word | Stack Effect | Description |
 |---|---|---|
@@ -159,7 +141,7 @@ All expect a URL string on top of the stack.
 | `param-values` | `( str -- arr )` | Parse as URL, return query param values |
 | `path-segments` | `( str -- arr )` | Split by `/`, remove empties |
 
-### 3.8 Array Operations
+### 3.6 Array Operations
 
 | Word | Stack Effect | Description |
 |---|---|---|
@@ -170,7 +152,43 @@ All expect a URL string on top of the stack.
 | `slice` | `( arr start count -- arr )` | Sub-array |
 | `zip` | `( arr arr -- arr )` | Pair two arrays element-wise into `[[a0,b0],[a1,b1],…]`, truncated to the shorter length |
 
-### 3.9 Control Flow & Combinators
+### 3.7 Arithmetic
+
+All arithmetic operations work on 16-bit signed integers with strict 2's complement wrapping.
+
+| Word | Stack Effect | Description |
+|---|---|---|
+| `+` | `( a b -- sum )` | Addition |
+| `-` | `( a b -- diff )` | Subtraction |
+| `*` | `( a b -- prod )` | Multiplication |
+| `/` | `( a b -- quot )` | Integer division (truncates toward zero). Throws error if divisor is 0. |
+| `%` | `( a b -- rem )` | Modulo (sign follows dividend). Throws error if divisor is 0. |
+
+### 3.8 Comparison
+
+Comparison operators return `1` for true and `0` for false.
+
+| Word | Stack Effect | Description |
+|---|---|---|
+| `eq` | `( a b -- flag )` | Equal |
+| `neq` | `( a b -- flag )` | Not equal |
+| `>` | `( a b -- flag )` | Greater than |
+| `<` | `( a b -- flag )` | Less than |
+| `>=` | `( a b -- flag )` | Greater than or equal |
+| `<=` | `( a b -- flag )` | Less than or equal |
+| `starts-with` | `( str prefix -- flag )` | String starts with prefix |
+| `ends-with` | `( str suffix -- flag )` | String ends with suffix |
+| `contains` | `( haystack needle -- flag )` | String contains substring |
+
+### 3.9 Logic
+
+| Word | Stack Effect | Description |
+|---|---|---|
+| `and` | `( a b -- flag )` | Logical AND |
+| `or` | `( a b -- flag )` | Logical OR |
+| `not` | `( a -- flag )` | Logical NOT |
+
+### 3.10 Control Flow & Combinators
 
 All control flow uses quotations (reified code blocks):
 
@@ -183,14 +201,14 @@ All control flow uses quotations (reified code blocks):
 | `filter` | `( arr quot -- arr' )` | Keep elements where quotation pushes truthy |
 | `each` | `( arr quot -- … )` | Execute quotation for each element (no collect) |
 
-### 3.10 Termination
+### 3.11 Termination
 
 | Word | Stack Effect | Description |
 |---|---|---|
 | `redirect` | `( url -- )` | Halt VM; return top as redirect destination |
 | `skip` | `( -- )` | Halt VM; return null (no redirect) |
 
-### 3.11 Type Predicates
+### 3.12 Type Predicates
 
 All four words **peek** the top of stack (leaving it intact) and push a `1`/`0` flag:
 
@@ -201,7 +219,7 @@ All four words **peek** the top of stack (leaving it intact) and push a `1`/`0` 
 | `arr?` | `( a -- a 0\|1 )` | `1` if top is an array |
 | `quot?` | `( a -- a 0\|1 )` | `1` if top is a quotation |
 
-### 3.12 Custom Words
+### 3.13 Custom Words
 
 Define reusable words with `: name ... ;`
 
