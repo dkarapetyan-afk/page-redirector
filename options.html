@@ -25,8 +25,7 @@
                         <option value="exact">Exact Match</option>
                         <option value="regex">Regular Expression</option>
                         <option value="wildcard">Wildcard Match</option>
-                        <option value="ast">AST Script</option>
-                        <option value="vm">Compiled VM Script</option>
+                        <option value="script">Stack Script</option>
                     </select>
                 </div>
 
@@ -64,7 +63,7 @@
                         <p>Example: <code>https://example.com/images/*</code></p>
                     </div>
                     <div id="bytecode-help" class="help-text" style="display: none;">
-                        <p><strong>Bytecode Syntax:</strong> Use the stack-based language. Emit a string and call
+                        <p><strong>Script Syntax:</strong> Use the stack-based language. Emit a string and call
                             <code>redirect</code>.</p>
                         <p>Example: <code>host "example.com" eq [ "https://newdomain.com" redirect ] call-if</code></p>
                     </div>

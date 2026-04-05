@@ -19,13 +19,20 @@ init().then(() => {
 // Migration function for existing rules
 function migrateRule(rule) {
     let changed = false;
-    // Migrate match types
-    if (rule.type === 'bytecode') {
-        rule.type = 'ast';
+    // Migrate legacy match types to 'script'
+    if (rule.type === 'ast' || rule.type === 'vm' || rule.type === 'bytecode' || rule.type === 'compiled') {
+        const oldType = rule.type;
+        rule.type = 'script';
         changed = true;
-    } else if (rule.type === 'compiled') {
-        rule.type = 'vm';
-        changed = true;
+        
+        // Set default engine if missing
+        if (!rule.engine) {
+            if (oldType === 'vm' || oldType === 'compiled') {
+                rule.engine = 'vm-js';
+            } else {
+                rule.engine = 'ast';
+            }
+        }
     }
 
     // Migrate engine names
@@ -62,7 +69,7 @@ function processRules(rawRules) {
             } catch (e) {
                 console.error("Failed to compile wildcard rule:", rule.source, e);
             }
-        } else if (rule.type === 'vm' && rule.matchRegex) {
+        } else if (rule.type === 'script' && rule.matchRegex) {
             try {
                 compiledRegex = new RegExp(rule.matchRegex, 'gmv');
             } catch (e) {
@@ -70,7 +77,7 @@ function processRules(rawRules) {
             }
         }
         
-        if (rule.type === 'vm') {
+        if (rule.type === 'script' && rule.engine && rule.engine.startsWith('vm')) {
             if (rule.compilerVersion !== COMPILER_VERSION) {
                 console.log(`Auto-migrating compiled rule [${rule.id}] to version ${COMPILER_VERSION}`);
                 try {
@@ -144,7 +151,7 @@ function checkRedirect(url) {
         } else if ((rule.type === "regex" || rule.type === "wildcard") && rule._compiledRegex) {
             rule._compiledRegex.lastIndex = 0;
             shouldRedirect = rule._compiledRegex.test(url);
-        } else if (rule.type === "ast" || rule.type === "vm") {
+        } else if (rule.type === "script") {
             if (rule._compiledRegex) {
                 rule._compiledRegex.lastIndex = 0;
                 if (!rule._compiledRegex.test(url)) {
@@ -153,20 +160,14 @@ function checkRedirect(url) {
             }
             try {
                 let res;
-                // rule.type 'ast' uses 'ast' engine (Interpreter)
-                // rule.type 'vm' defaults to 'vm-js' engine (Bytecode VM)
-                const defaultEngine = rule.type === 'ast' ? 'ast' : 'vm-js';
-                const engine = rule.engine || defaultEngine;
+                const engine = rule.engine || "ast";
 
-                if (rule.type === "vm") {
-                    if (engine === 'vm-wasm' && wasmReady) {
-                        res = wasmExecute(new Uint8Array(rule.bytecode), rule.constants, url, {});
-                    } else if (engine === 'ast') {
-                         res = vm.execute(rule.source, url);
-                    } else {
-                        res = VM.execute(rule.bytecode, rule.constants, url);
-                    }
+                if (engine === 'vm-wasm' && wasmReady) {
+                    res = wasmExecute(new Uint8Array(rule.bytecode), rule.constants, url, {});
+                } else if (engine === 'vm-js') {
+                    res = VM.execute(rule.bytecode, rule.constants, url);
                 } else {
+                    // Default to 'ast' interpreter
                     res = vm.execute(rule.source, url);
                 }
                 if (res.success && res.redirect) {

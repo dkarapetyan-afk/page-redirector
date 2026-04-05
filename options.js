@@ -240,13 +240,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Migration function for existing rules
     function migrateRule(rule) {
         let changed = false;
-        // Migrate match types
-        if (rule.type === 'bytecode') {
-            rule.type = 'ast';
+        // Migrate legacy match types to 'script'
+        if (rule.type === 'ast' || rule.type === 'vm' || rule.type === 'bytecode' || rule.type === 'compiled') {
+            const oldType = rule.type;
+            rule.type = 'script';
             changed = true;
-        } else if (rule.type === 'compiled') {
-            rule.type = 'vm';
-            changed = true;
+            
+            // Set default engine if missing
+            if (!rule.engine) {
+                if (oldType === 'vm' || oldType === 'compiled') {
+                    rule.engine = 'vm-js';
+                } else {
+                    rule.engine = 'ast';
+                }
+            }
         }
 
         // Migrate engine names
@@ -303,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const clone = template.content.cloneNode(true);
             const card = clone.querySelector('.rule-card');
 
-            clone.querySelector('.type-badge').textContent = rule.type;
+            clone.querySelector('.type-badge').textContent = rule.type === 'script' ? (rule.engine || 'script') : rule.type;
             const sourceUrlEl = clone.querySelector('.source-url');
             sourceUrlEl.textContent = '*'.repeat(rule.source.length);
             sourceUrlEl.title = rule.source; // Reveal on hover
@@ -330,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Populate the form with this rule's data
                 editingRuleIdInput.value = rule.id;
                 ruleTypeInput.value = rule.type;
-                if (rule.type === 'ast' || rule.type === 'vm') {
+                if (rule.type === 'script') {
                     ruleSourceCode.value = rule.source;
                     if (ruleBytecodeMatch) ruleBytecodeMatch.value = rule.matchRegex || '';
                     if (ruleEngineSelect) ruleEngineSelect.value = rule.engine || 'vm-js';
@@ -374,16 +381,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const type = e.target.value;
         const isRegex = type === 'regex';
         const isWildcard = type === 'wildcard';
-        const isBytecode = type === 'ast' || type === 'vm';
+        const isScript = type === 'script';
 
         regexHelp.style.display = isRegex ? 'block' : 'none';
         regexDestHelp.style.display = isRegex ? 'block' : 'none';
         wildcardHelp.style.display = isWildcard ? 'block' : 'none';
-        if (bytecodeHelp) bytecodeHelp.style.display = isBytecode ? 'block' : 'none';
-        if (debugPanel) debugPanel.style.display = isBytecode ? 'block' : 'none';
-        if (engineGroup) engineGroup.style.display = isBytecode ? 'block' : 'none';
+        if (bytecodeHelp) bytecodeHelp.style.display = isScript ? 'block' : 'none';
+        if (debugPanel) debugPanel.style.display = isScript ? 'block' : 'none';
+        if (engineGroup) engineGroup.style.display = isScript ? 'block' : 'none';
 
-        if (isBytecode) {
+        if (isScript) {
             ruleSourceInput.style.display = 'none';
             ruleSourceInput.required = false;
             ruleSourceCode.style.display = 'block';
@@ -392,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (bytecodeMatchGroup) bytecodeMatchGroup.style.display = 'block';
             destGroup.style.display = 'none';
             ruleDestInput.required = false;
-            ruleSourceLabel.textContent = type === 'vm' ? "Compiled VM Script" : "AST Script";
+            ruleSourceLabel.textContent = "Source Code";
         } else {
             ruleSourceInput.style.display = 'block';
             ruleSourceInput.required = true;
@@ -429,15 +436,15 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
 
         const type = ruleTypeInput.value;
-        const isBytecode = type === 'ast' || type === 'vm';
-        const source = isBytecode ? ruleSourceCode.value : ruleSourceInput.value;
-        const matchRegex = isBytecode && ruleBytecodeMatch ? ruleBytecodeMatch.value : "";
-        const engine = isBytecode && ruleEngineSelect ? ruleEngineSelect.value : "vm-js";
-        const destination = isBytecode ? "" : ruleDestInput.value;
+        const isScript = type === 'script';
+        const source = isScript ? ruleSourceCode.value : ruleSourceInput.value;
+        const matchRegex = isScript && ruleBytecodeMatch ? ruleBytecodeMatch.value : "";
+        const engine = isScript && ruleEngineSelect ? ruleEngineSelect.value : (isScript ? "vm-js" : "");
+        const destination = isScript ? "" : ruleDestInput.value;
         const editingId = editingRuleIdInput.value;
 
         // Basic validation
-        if (!source || (!destination && !isBytecode)) return;
+        if (!source || (!destination && !isScript)) return;
 
         if (editingId) {
             // Update existing rule
@@ -451,13 +458,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     destination,
                     engine
                 };
-                if (isBytecode && matchRegex) {
+                if (isScript && matchRegex) {
                     updatedRules[ruleIndex].matchRegex = matchRegex;
                 } else {
                     delete updatedRules[ruleIndex].matchRegex;
                 }
                 
-                if (type === 'vm') {
+                if (isScript && engine.startsWith('vm')) {
                     try {
                         const comp = Compiler.compile(source);
                         updatedRules[ruleIndex].bytecode = comp.bytecode;
@@ -488,10 +495,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 createdAt: Date.now(),
                 hitCount: 0
             };
-            if (isBytecode && matchRegex) {
+            if (isScript && matchRegex) {
                 newRule.matchRegex = matchRegex;
             }
-            if (type === 'vm') {
+            if (isScript && engine.startsWith('vm')) {
                 try {
                     const comp = Compiler.compile(source);
                     newRule.bytecode = comp.bytecode;
